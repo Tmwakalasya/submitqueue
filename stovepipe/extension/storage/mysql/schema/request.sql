@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS request (
     uri             VARCHAR(255) NOT NULL,
     state           VARCHAR(64)  NOT NULL,
     build_strategy  VARCHAR(64)  NOT NULL DEFAULT '',
-    base_uri        VARCHAR(255) NOT NULL DEFAULT '',
-    version         INT          NOT NULL,
+    base_uri          VARCHAR(255) NOT NULL DEFAULT '',
+    version           INT          NOT NULL,
+    terminal_build_id VARCHAR(255) NOT NULL DEFAULT '',
     PRIMARY KEY (queue, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

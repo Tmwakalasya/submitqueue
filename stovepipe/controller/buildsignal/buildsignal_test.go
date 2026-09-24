@@ -178,7 +178,9 @@ func expectFinishWrites(m buildsignalMocks, state entity.RequestState) *gomock.C
 	eventCall := expectBuildFinished(m)
 	m.queueStore.EXPECT().Get(gomock.Any(), testQueue).Return(queueRow(1, 4), nil).After(eventCall)
 	m.queueStore.EXPECT().Update(gomock.Any(), queueRow(0, 4), int32(4), int32(5)).Return(nil)
-	return m.reqStore.EXPECT().Update(gomock.Any(), requestWithState(state), int32(1), int32(2)).Return(nil)
+	request := requestWithState(state)
+	request.TerminalBuildID = testBuildID
+	return m.reqStore.EXPECT().Update(gomock.Any(), request, int32(1), int32(2)).Return(nil)
 }
 
 func expectBuildFinished(m buildsignalMocks) *gomock.Call {
@@ -212,6 +214,22 @@ func expectOutcomeLog(m buildsignalMocks, state entity.RequestState, version int
 		m.store,
 		requestlog.NewRequestStateLog(request, reason),
 	).Return(nil)
+}
+
+func TestMarkOutcomePreservesFirstTerminalBuild(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	c, m := newController(t, ctrl)
+	request := requestWithState(entity.RequestStateProcessing)
+	winner := requestWithState(entity.RequestStateSucceeded)
+	winner.Version = 2
+	winner.TerminalBuildID = "winning-build"
+
+	m.reqStore.EXPECT().Update(gomock.Any(), gomock.Any(), int32(1), int32(2)).Return(storage.ErrVersionMismatch)
+	m.reqStore.EXPECT().Get(gomock.Any(), testID).Return(winner, nil)
+
+	err := c.markOutcome(context.Background(), m.store, &request, entity.RequestStateFailed, "losing-build")
+	require.NoError(t, err)
+	assert.Equal(t, winner, request)
 }
 
 func TestProcess(t *testing.T) {

@@ -12,7 +12,7 @@ It handles only the poll loop: it does not decide build strategy, write greennes
 
 Its logic does not branch on phase: it loads the `Build`, polls it toward terminal, persists the result, and publishes the request id onward to `record`. What differs between phases is what `record` does with that publish (whole-repo vs. per-project greenness) — not anything `buildsignal` decides.
 
-`buildsignal` is the sole writer of `Build.Status`/`Build.Version` after `build` creates the row (see [build.md](build.md#input-partitioning-and-the-single-writer-property)). It reads `Request` via `RequestStore.Get` (for `R.Queue`, to resolve the build-runner) and writes it exactly once, at the terminal transition, to record the build's outcome — the one `Request.State` write outside `process` and the DLQ reconciler.
+`buildsignal` is the sole writer of `Build.Status`/`Build.Version` after `build` creates the row (see [build.md](build.md#input-partitioning-and-the-single-writer-property)). It reads `Request` via `RequestStore.Get` (for `R.Queue`, to resolve the build-runner) and writes it exactly once at the terminal transition, recording the build's outcome and `Request.TerminalBuildID` — the one `Request.State` write outside `process` and the DLQ reconciler.
 
 Its early-exit guard is deliberately narrower than `State.IsTerminal()`: it proceeds when the request is `processing` **or** already carries a build outcome. The second case matters because a redelivery after the outcome was stamped but before the `record` publish landed must re-publish rather than drop the signal; everything it re-runs is a no-op (the status is unchanged, the outcome is already recorded, the slot is not released twice) and the `record` publish is idempotent.
 
@@ -63,12 +63,14 @@ For a delivery carrying build id `B`:
 7. If the stored status is terminal, and R does not already carry an outcome:
    a. Release the queue's build slot: CAS-decrement Queue.in_flight_count, clamped at zero.
       - failure here aborts the step: R must not go terminal while still holding a slot.
-   b. CAS R from processing to the outcome the stored status projects onto it:
+   b. CAS R from processing to the outcome the stored status projects onto it and set
+      R.TerminalBuildID to B:
       succeeded -> succeeded, failed -> failed, cancelled -> cancelled. First writer wins.
    Then publish R.ID to the record topic, partitioned by request id; ack, return.
    No re-publish to buildsignal.
-   - record loads the Request directly by this key and derives greenness from its outcome,
-     so it never reaches a Build and no reverse lookup from Request to its builds is needed.
+   - record loads the Request directly by this key and derives greenness from its outcome.
+     A later artifact reader reads R.TerminalBuildID; no reverse lookup from Request to its
+     builds is needed.
    - the message id is the request id, so a redelivery republishing the same terminal signal
      dedups into the original message; record is idempotent regardless.
    - publish failure -> return raw (non-retryable); the outcome is persisted, operational

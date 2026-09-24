@@ -177,7 +177,7 @@ func (c *Controller) Process(ctx context.Context, delivery consumer.Delivery) er
 		if err := c.persistBuildFinishedLog(ctx, store, request, build.ID); err != nil {
 			return err
 		}
-		if err := c.finishRequest(ctx, store, &request, effective); err != nil {
+		if err := c.finishRequest(ctx, store, &request, effective, build.ID); err != nil {
 			return err
 		}
 		if err := c.persistOutcomeLog(ctx, store, request); err != nil {
@@ -234,7 +234,7 @@ func (c *Controller) persistBuildFinishedLog(ctx context.Context, store storage.
 // the request non-terminal, so redelivery re-runs both steps and decrements again
 // — transiently over-admitting by one until releaseBuildSlot's zero clamp
 // reconverges, which is the failure mode this pipeline prefers.
-func (c *Controller) finishRequest(ctx context.Context, store storage.Storage, request *entity.Request, status entity.BuildStatus) error {
+func (c *Controller) finishRequest(ctx context.Context, store storage.Storage, request *entity.Request, status entity.BuildStatus, buildID string) error {
 	if request.State.HasBuildOutcome() {
 		return nil
 	}
@@ -244,7 +244,7 @@ func (c *Controller) finishRequest(ctx context.Context, store storage.Storage, r
 		return err
 	}
 
-	if err := c.markOutcome(ctx, store, request, outcomeState(status)); err != nil {
+	if err := c.markOutcome(ctx, store, request, outcomeState(status), buildID); err != nil {
 		metrics.NamedCounter(c.metricsScope, _opName, "storage_errors", 1, metrics.TagsFromContext(ctx)...)
 		return err
 	}
@@ -290,7 +290,7 @@ func outcomeState(status entity.BuildStatus) entity.RequestState {
 // conflicts. First writer wins: once any outcome is recorded a later caller leaves it
 // alone, so duplicate builds for one request (which build.md accepts) cannot flip the
 // verdict back and forth.
-func (c *Controller) markOutcome(ctx context.Context, store storage.Storage, request *entity.Request, state entity.RequestState) error {
+func (c *Controller) markOutcome(ctx context.Context, store storage.Storage, request *entity.Request, state entity.RequestState, buildID string) error {
 	reqStore := store.GetRequestStore()
 
 	for {
@@ -300,6 +300,7 @@ func (c *Controller) markOutcome(ctx context.Context, store storage.Storage, req
 
 		updated := *request
 		updated.State = state
+		updated.TerminalBuildID = buildID
 		newVersion := request.Version + 1
 		if err := reqStore.Update(ctx, updated, request.Version, newVersion); err != nil {
 			if errors.Is(err, storage.ErrVersionMismatch) {

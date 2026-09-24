@@ -116,6 +116,9 @@ type Request struct {
 
 	// State is the current state of the request in the pipeline.
 	State RequestState `json:"state"`
+	// TerminalBuildID identifies the build that established the terminal state.
+	// It is empty until a build reaches a terminal state.
+	TerminalBuildID string `json:"terminal_build_id"`
 	// Version is the version of the object. It is used for optimistic locking.
 	// Versioning starts at 1 and is incremented for each change to the object.
 	Version int32 `json:"version"`
