@@ -1,0 +1,74 @@
+{
+  "input": "/tmp/sq-buildkite-tango.streamed_proto",
+  "bazel_streamed_proto_input_bytes": 37979510,
+  "scope_prefix": "//src/code.uber.internal/devexp/buildkite/",
+  "bazel_query": "//external:all-targets + deps(//src/code.uber.internal/devexp/buildkite/...:all-targets)",
+  "go_code_revision": "c5655f3f7e87f",
+  "tango_revision": "50b3695a9909f19b78a3b1b35c095c9a8331d9db",
+  "go_version": "go1.26.3",
+  "max_protobuf_message_bytes": 4250000,
+  "impact_source_prefix": "//src/code.uber.internal/devexp/buildkite/",
+  "sample": {
+    "bazel_query_targets_scanned": 56214,
+    "targets": 1819,
+    "rule_targets": 539,
+    "source_files": 957,
+    "generated_files": 323,
+    "package_groups": 0,
+    "external_targets": 0,
+    "unique_packages_in_query": 156,
+    "included_edges": 2204,
+    "edges_to_targets_outside_scope": 5249,
+    "excluded_main_repo_edges": 676,
+    "excluded_external_repo_edges": 4573,
+    "go_heap_parsed_graph_bytes": 1331816,
+    "go_heap_compact_graph_bytes": 722976,
+    "go_heap_sorted_fingerprints_bytes": 32888,
+    "sorted_fingerprints_raw_bytes": 14552,
+    "tango_default": {
+      "protobuf_bytes": 199013,
+      "gzip_best_speed_bytes": 32392,
+      "messages": 2,
+      "largest_message_bytes": 179700
+    },
+    "tango_all_fields_model": {
+      "protobuf_bytes": 324930,
+      "gzip_best_speed_bytes": 95348,
+      "messages": 2,
+      "largest_message_bytes": 215359
+    },
+    "tango_names_only_model": {
+      "protobuf_bytes": 188201,
+      "gzip_best_speed_bytes": 25545,
+      "messages": 2,
+      "largest_message_bytes": 179230
+    },
+    "synthetic_source_change_overlap": {
+      "eligible_main_repo_source_files": 957,
+      "sampled_source_file_seeds": 64,
+      "source_seed_pairs": 2016,
+      "full_reverse_closure_overlap_pairs": 220,
+      "one_hop_overlap_pairs": 36,
+      "median_full_closure_targets": 4,
+      "p95_full_closure_targets": 68,
+      "max_full_closure_targets": 157
+    }
+  },
+  "linear_projection": {
+    "total_tracked_build_files": 317209,
+    "sampled_tracked_build_files": 156,
+    "linear_scaling_factor": 2033.3910256410256,
+    "estimated_targets": 3698738,
+    "estimated_in_sample_edges": 4481594,
+    "estimated_cross_scope_main_repo_edges": 1374572,
+    "estimated_cross_scope_external_edges": 9298697,
+    "estimated_default_proto_bytes": 404671248,
+    "estimated_all_fields_proto_bytes": 660709746,
+    "estimated_names_only_proto_bytes": 382686224,
+    "estimated_default_gzip_bytes": 65865602,
+    "estimated_compact_graph_go_heap_bytes": 1470092910,
+    "estimated_fingerprint_go_heap_bytes": 66874164,
+    "estimated_fingerprint_storage_bytes": 29589906
+  },
+  "projection_qualification": "Linear extrapolation of an observed subset, not a full Bazel or Tango run; excludes cross-scope dependencies and may misestimate external repositories, label lengths, tags, hash cycles, and BUILD files Bazel ignores."
+}

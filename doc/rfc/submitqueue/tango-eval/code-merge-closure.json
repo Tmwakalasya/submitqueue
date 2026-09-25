@@ -1,0 +1,56 @@
+{
+  "input": "/tmp/sq-code-merge-tango.streamed_proto",
+  "bazel_streamed_proto_input_bytes": 30882032,
+  "bazel_query": "//external:all-targets + deps(//src/code.uber.internal/devexp/code_merge/...:all-targets)",
+  "go_code_revision": "c5655f3f7e87f",
+  "tango_revision": "50b3695a9909f19b78a3b1b35c095c9a8331d9db",
+  "go_version": "go1.26.3",
+  "max_protobuf_message_bytes": 4250000,
+  "impact_source_prefix": "//src/code.uber.internal/devexp/code_merge/",
+  "sample": {
+    "bazel_query_targets_scanned": 44233,
+    "targets": 44233,
+    "rule_targets": 33945,
+    "source_files": 10235,
+    "generated_files": 48,
+    "package_groups": 5,
+    "external_targets": 38899,
+    "unique_packages_in_query": 2659,
+    "included_edges": 44132,
+    "edges_to_targets_outside_scope": 7597,
+    "excluded_main_repo_edges": 490,
+    "excluded_external_repo_edges": 7107,
+    "go_heap_parsed_graph_bytes": 14929064,
+    "go_heap_compact_graph_bytes": 12927936,
+    "go_heap_sorted_fingerprints_bytes": 365512,
+    "sorted_fingerprints_raw_bytes": 353864,
+    "tango_default": {
+      "protobuf_bytes": 4100123,
+      "gzip_best_speed_bytes": 801495,
+      "messages": 2,
+      "largest_message_bytes": 3485403
+    },
+    "tango_all_fields_model": {
+      "protobuf_bytes": 6319670,
+      "gzip_best_speed_bytes": 2058234,
+      "messages": 2,
+      "largest_message_bytes": 3755482
+    },
+    "tango_names_only_model": {
+      "protobuf_bytes": 3732886,
+      "gzip_best_speed_bytes": 715886,
+      "messages": 2,
+      "largest_message_bytes": 3483994
+    },
+    "synthetic_source_change_overlap": {
+      "eligible_main_repo_source_files": 299,
+      "sampled_source_file_seeds": 64,
+      "source_seed_pairs": 2016,
+      "full_reverse_closure_overlap_pairs": 141,
+      "one_hop_overlap_pairs": 4,
+      "median_full_closure_targets": 3,
+      "p95_full_closure_targets": 20,
+      "max_full_closure_targets": 32
+    }
+  }
+}
