@@ -50,6 +50,7 @@ The queue's own logic is real in all three: validation, batching, conflict analy
 | [Contributing](CONTRIBUTING.md) | How to contribute, workflow, guidelines |
 | [Testing Guide](doc/howto/TESTING.md) | Unit, integration, and E2E testing patterns |
 | [Architecture Guide](AGENTS.md) | Project layout, patterns, conventions |
+| [Tango Conflict Analysis](TANGO_CONFLICT_ANALYSIS.md) | Full go-code target-graph measurement, evaluator, and SubmitQueue design recommendation |
 | [Examples](service/README.md) | Running services, clients, API reference |
 | [RFCs](doc/rfc/index.md) | Design documents and proposals |
 

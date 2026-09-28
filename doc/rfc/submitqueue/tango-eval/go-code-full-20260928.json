@@ -1,0 +1,55 @@
+{
+  "input": "/tmp/sq-go-code-full-20260928.streamed_proto",
+  "bazel_streamed_proto_input_bytes": 2799274578,
+  "bazel_query": "//external:all-targets + deps(//...:all-targets)",
+  "go_code_revision": "c5655f3f7e87f",
+  "tango_revision": "50b3695a9909f19b78a3b1b35c095c9a8331d9db",
+  "go_version": "go1.26.3",
+  "max_protobuf_message_bytes": 4250000,
+  "sample": {
+    "bazel_query_targets_scanned": 2969283,
+    "targets": 2969283,
+    "rule_targets": 997235,
+    "source_files": 1887433,
+    "generated_files": 84568,
+    "package_groups": 47,
+    "external_targets": 430553,
+    "unique_packages_in_query": 353238,
+    "included_edges": 14519552,
+    "edges_to_targets_outside_scope": 4812,
+    "excluded_main_repo_edges": 160,
+    "excluded_external_repo_edges": 4652,
+    "go_heap_parsed_graph_bytes": 2465486896,
+    "go_heap_compact_graph_bytes": 1180570080,
+    "go_heap_sorted_fingerprints_bytes": 24119248,
+    "sorted_fingerprints_raw_bytes": 23754264,
+    "tango_default": {
+      "protobuf_bytes": 396890158,
+      "gzip_best_speed_bytes": 65922174,
+      "messages": 94,
+      "largest_message_bytes": 4249995
+    },
+    "tango_all_fields_model": {
+      "protobuf_bytes": 624477967,
+      "gzip_best_speed_bytes": 168236138,
+      "messages": 147,
+      "largest_message_bytes": 4249995
+    },
+    "tango_names_only_model": {
+      "protobuf_bytes": 335244866,
+      "gzip_best_speed_bytes": 44226073,
+      "messages": 80,
+      "largest_message_bytes": 4249995
+    },
+    "synthetic_source_change_overlap": {
+      "eligible_main_repo_source_files": 1533785,
+      "sampled_source_file_seeds": 64,
+      "source_seed_pairs": 2016,
+      "full_reverse_closure_overlap_pairs": 4,
+      "one_hop_overlap_pairs": 0,
+      "median_full_closure_targets": 2,
+      "p95_full_closure_targets": 225,
+      "max_full_closure_targets": 1615
+    }
+  }
+}

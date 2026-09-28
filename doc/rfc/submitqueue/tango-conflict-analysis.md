@@ -1,12 +1,12 @@
 # Tango-backed conflict analysis for SubmitQueue
 
-**Date:** September 25, 2026. **SubmitQueue base:** `origin/main@6c4b769c` on `research/tango-conflict-graphs`. **Tango inspected:** `uber/tango@50b3695a9909f19b78a3b1b35c095c9a8331d9db`. **go-code checkout measured:** `c5655f3f7e87f`; this checkout is not a fresh copy of go-code main.
+**Original analysis:** September 25, 2026. **Complete go-code graph measured:** September 28, 2026. **SubmitQueue base:** `origin/main@6c4b769c` on `research/tango-conflict-graphs`. **Tango inspected:** `uber/tango@50b3695a9909f19b78a3b1b35c095c9a8331d9db`. **go-code checkout measured:** `c5655f3f7e87f`; this checkout is not a fresh copy of go-code main.
 
 ## Recommendation
 
 Implement a queue-scoped `conflict.Analyzer` backed by Tango's **`GetChangedTargets`**, not `GetTargetGraph`: compare the canonical labels of the affected targets of each batch, storing a small, durable per-batch impact signature and the baseline revision from which it was computed. Never load a monorepo target graph into a SubmitQueue controller, its queue payload, or its versioned `Batch`. Fetch and retain one signature per batch, then intersect the candidate's signature with each in-flight batch's signature. Initially support queues with canonical GitHub PR URIs and a known, common base SHA; **conservatively serialize** when graph coverage, identity, or base compatibility cannot be established.
 
-This is a proposed design, **not an implementation of the Tango analyzer**. This branch contains an executable evaluator, tests, six aggregate measurement artifacts, and this report. No go-code branch or code modifications were necessary.
+This is a proposed design, **not an implementation of the Tango analyzer**. This branch contains an executable evaluator, tests, seven aggregate JSON measurements, the full-query attempts log, and this report. The [root-level report entry](../../../TANGO_CONFLICT_ANALYSIS.md) makes the findings easy to find in the submitqueue repository. No go-code branch or code modifications were necessary.
 
 ## What is available today
 
@@ -21,9 +21,29 @@ This is a proposed design, **not an implementation of the Tango analyzer**. This
 
 The [`tool/tangograph-eval/`](../../../tool/tangograph-eval/) Go program reads Bazel's length-delimited `--output=streamed_proto` targets, retains the fields Tango maps into its graph, constructs a similarly shaped ID-mapped Go graph, measures **live Go heap after GC**, and encodes the modeled Tango `GetTargetGraphResponse` protobuf messages. It reports payload size without transport framing, measured per-message gzip/best-speed sizes **as an illustrative optional transport choice**, and a sorted eight-byte fingerprint array. It also samples 64 source-file nodes per subtree and compares one-hop with full reverse-dependency closure; these are **synthetic single-file changes**, not observed Tango diffs.
 
-For the current go-code checkout, Bazel is configured with `--noenable_bzlmod`; Tango's native runner would query `//external:all-targets + deps(//...:all-targets)` for that mode. The samples use the **same `//external` prefix** and Tango's query flags (`--order_output=no --proto:locations --noproto:default_values`). The input files are temporary Bazel intermediates, not checked-in copies of internal source labels. The six checked-in JSON summaries under [`tango-eval/`](tango-eval/) contain the query, checkout SHA, Tango SHA, counts, protobuf estimates, heap measurements, and projection assumptions.
+For the measured go-code checkout, Bazel is configured with `--noenable_bzlmod`; Tango's native runner would query `//external:all-targets + deps(//...:all-targets)` for that mode. Both the earlier subtree queries and the successful complete-repository query use Tango's `--order_output=no --proto:locations --noproto:default_values --output=streamed_proto` flags. The Bazel input files remain temporary rather than checking large internal target-name dumps into SubmitQueue. The seven checked-in JSON summaries under [`tango-eval/`](tango-eval/) record the query, checkout SHA, Tango SHA, node and edge counts, modeled protobuf payloads, and measured Go-model heap; the [attempt log](tango-eval/go-code-full-20260928-attempts.tsv) records the three identical full-query runs.
 
-### Observed closed subgraphs (not the whole monorepo)
+### Complete go-code target graph: observed September 28, 2026
+
+The complete `//external:all-targets + deps(//...:all-targets)` query succeeded on **attempt 3 of a 20-attempt maximum**, with unchanged Bazel arguments and the same go-code commit on every attempt. Attempt 1 encountered an Artifactory HTTP 502 fetching a Go dependency; attempt 2 encountered a different external download stream error. The successful third query ran for **771.81 seconds**; all three attempts together ran from 20:42:54 to 20:58:05 UTC. The result is a **complete successful Bazel query for this checkout**, not a capture of Tango serving an RPC or computing content-derived target hashes. See the [full measurement](tango-eval/go-code-full-20260928.json) and [attempt log](tango-eval/go-code-full-20260928-attempts.tsv).
+
+| Property | Complete result | What it measures |
+|---|---:|---|
+| Bazel `streamed_proto` input | 2,799,274,578 bytes (2.607 GiB) | Actual complete query output; SHA-256 `99f0cfd8e2541d381ca845dcaac01b4166cb451817ca998202932dbf3009c14f` |
+| Target nodes | **2,969,283** | Actual parsed Bazel targets, including 430,553 external nodes (2,538,730 other nodes) |
+| Target dependencies | 14,519,552 represented edges | 4,812 additional input references have no returned target and are not represented by the ID-mapped evaluator graph (0.033% of references) |
+| Go heap: parsed Bazel-shaped graph | 2,465,486,896 bytes (2.296 GiB) | Live heap after GC; model retains the query fields the evaluator needs |
+| Go heap: Tango-shaped ID graph | **1,180,570,080 bytes (1.099 GiB)** | Live heap after GC, including IDs, metadata dictionaries, modeled 40-character hashes, tags, and string attributes |
+| Evaluator process peak RSS | 4,613,064 KiB (4.40 GiB) | Measured by `/usr/bin/time -v`; includes temporary allocations, runtime, and all modeling stages |
+| Evaluator wall time | 49.73 seconds | Parse, model, encode and gzip the complete graph on this host; excludes the Bazel query |
+| Default Tango-style graph protobuf | **396,890,158 bytes (378.50 MiB)** | Modeled uncompressed response, 94 size-bounded messages, including names/dependencies but excluding hashes/tags/attributes |
+| All-fields Tango-style graph protobuf | 624,477,967 bytes (595.55 MiB) | Modeled uncompressed response, 147 messages, with synthetic 40-character hashes |
+| Default protobuf under optional gzip | 65,922,174 bytes (62.87 MiB) | Measured gzip/best-speed encoding separately for each modeled response message; **not** a Tango RPC transport measurement |
+| Sorted 64-bit target-label fingerprints | **23,754,264 bytes (22.65 MiB)** | Eight bytes per node if *all* targets change; a real per-batch impact set normally holds fewer |
+
+The model also reports a hypothetical ID-and-name-only response of 319.71 MiB, **not a currently selectable Tango output mode**. These numbers replace the earlier whole-repo extrapolation as the best available *full-graph* evidence; they still do **not** measure the memory peak of Tango itself, actual content hashes, a real changed-target response, or compressed production traffic. The Bazel query output is not committed because its 2.8 GB payload contains internal labels; its digest, exact invocation, evaluator results, and failure/success provenance are retained here.
+
+### Earlier observed closed subgraphs (September 25, 2026)
 
 | Requested subtree | Raw Bazel stream | Closure nodes (external nodes) | Modeled default Tango wire | Modeled all-fields Tango wire | Modeled default wire with gzip | Live Go ID-graph heap |
 |---|---:|---:|---:|---:|---:|---:|
@@ -33,7 +53,7 @@ For the current go-code checkout, Bazel is configured with `--noenable_bzlmod`; 
 
 `Default` means Tango's current default output fields: numeric ID, direct dependencies, rule type, root/external flags, and name/rule-type metadata. `All-fields` also includes tags, string attributes, and a **synthetic, label-derived 40-character SHA-1** as a stand-in for a target's actual content-derived hash; its *byte length* and incompressibility are modeled, **not the actual hash contents**. These are modeled serialized response bytes, **not captures of a running Tango service**. Both the observed closure and its many shared external targets differ among queries.
 
-### Explicitly modeled whole-repository range
+### Earlier extrapolated whole-repository range (superseded by the full query)
 
 `git ls-files '*BUILD.bazel'` counted **317,209 tracked BUILD.bazel files** in go-code at the measured commit. The sampled requested subtrees have 84, 156, and 143 BUILD.bazel files respectively. Scaling each subtree's **own nodes and within-subtree edges** to that tracked-file count yields the following *scenario range*, **not a measurement or statistical confidence interval**:
 
@@ -46,9 +66,9 @@ For the current go-code checkout, Bazel is configured with `--noenable_bzlmod`; 
 | Live Go ID-mapped graph heap | 683 MiB | 846 MiB | 1,402 MiB |
 | Packed, sorted 64-bit target-label fingerprints | 13.9 MiB | 14.9 MiB | 28.2 MiB |
 
-**Uncertainty is substantial.** The estimator filters to the sampled subtree when projecting: it omits its dependencies in other main-repo subtrees, the shared external node set, and their metadata/edges; protobuf IDs and label lengths also change at full-repo cardinality. For example, of buildkite's 7,453 outgoing edges, 2,204 stay in the sample, 676 point to other main-repo targets, and 4,573 point to external targets. The exact whole-repo Tango result could be higher or lower than any linear extrapolation because rules, generated outputs, shared deps, workspace repositories, ignored BUILD files, and cached Bazel configurations are non-uniform. The Go heap numbers model one graph representation, **not Tango's peak**, which can hold raw Bazel query results, input graphs, and diff outputs simultaneously. Gzip was **not enabled or measured on the Tango RPC**. Do not turn the table into capacity limits without a real complete Tango/GetChangedTargets benchmark.
+**The table above is preserved as a record of the original estimate, not as current measured data.** Its subset-only projection omitted other main-repo subtrees, shared external targets, metadata, and edges. For example, of buildkite's 7,453 outgoing edges, 2,204 stay in the sample, 676 point to other main-repo targets, and 4,573 point to external targets. The complete successful query measured **2.97 million** nodes, **378.50 MiB** of modeled default protobuf, and **1.099 GiB** of modeled compact-graph Go heap: within the earlier broad scenarios, but based on the actual complete graph rather than linear scaling. Neither set of numbers is Tango server peak memory or an observed `GetChangedTargets` response.
 
-The full devexp Bazel query was attempted but stopped while fetching an external Go module from the internal artifact mirror (**HTTP 502**). The three narrower queries above completed. No full-repo query, Tango server call, real change pair, or real network/RSS benchmark was performed; these limitations are the reason for an explicit projection rather than a fabricated whole-repo observation.
+The first broad devexp query on September 25 stopped on an external-module HTTP 502. The complete go-code query succeeded on September 28 after retries, so a **full Bazel graph and evaluator process RSS** are now measured. No Tango service call, real change pair, actual production wire compression, or Tango server RSS benchmark was performed.
 
 ### Conflict-policy sensitivity
 
@@ -60,11 +80,13 @@ For each **closed** subgraph, the evaluator selected 64 evenly distributed sourc
 | buildkite | 225 / 2,016 (11.2%) | 36 / 2,016 (1.8%) | 4 / 68 targets |
 | fulfillment | 171 / 2,016 (8.5%) | 4 / 2,016 (0.2%) | 2 / 84 targets |
 
+Across the **complete graph**, 64 evenly spaced synthetic seeds sampled from 1,533,785 main-repo source-file nodes yielded 4 / 2,016 pairs with overlapping full closures and 0 / 2,016 with one-hop overlap (full-closure median 2, 95th percentile 225, maximum 1,615 targets). That whole-repo pair rate is lower because it compares files from widely separated parts of the monorepo; it does **not** negate the higher local overlap rates above or estimate the production PR mix.
+
 This is a **structural sensitivity test**, not a conflict accuracy measurement: actual changed targets depend on changed file content and Tango's hashes. Capping to one hop changes the safety contract. For example, two different source files in two different libraries can both affect one integration test at distance two; one hop says they do not overlap even though their combined change has never been built. Use full closure for a conservative first implementation. An owner/one-hop mode belongs behind an explicit, measured policy decision or the separately designed controller-owned dependency relaxation, **not** behind a purportedly lossless compression switch. Even full closure is only conservative if Tango observes every build-affecting change; configure global build files, source hashing, and exclusions accordingly.
 
 ## Proposed SubmitQueue design
 
-1. Add `submitqueue/extension/conflict/tango/` implementing the **existing** `conflict.Analyzer`; inject a `changeset.Resolver`, an interface for Tango's streaming client, a queue-specific VCS/base-revision resolver, and a small key-oriented impact store at construction. Route each queue in `service/submitqueue/orchestrator/server/`, not in an extension factory. Do not expand controller inputs to include changes or graphs.
+1. Add `submitqueue/orchestrator/extension/conflict/tango/` implementing the **existing shared** `submitqueue/extension/conflict.Analyzer`; the implementation is service-scoped because only the orchestrator resolves it. Inject a `changeset.Resolver`, an interface for Tango's streaming client, a queue-specific VCS/base-revision resolver, and a small key-oriented impact store at construction. Route each queue in `service/submitqueue/orchestrator/server/`, not in an extension factory. Do not expand controller inputs to include changes or graphs.
 2. Resolve the candidate's and each in-flight batch's pinned request URIs, canonical repository remote, target branch **base SHA**, computation strategy, and analysis policy. Build Tango `first_revision={remote, base_sha, strategy: COMPUTATION_STRATEGY_UNSET}` and `second_revision={remote, base_sha, strategy: COMPUTATION_STRATEGY_UNSET, requests:[the pinned URIs in batch order]}` (or set `NATIVE` explicitly); the protobuf's zero-value `INVALID` strategy is not a valid default. Validate the same remote/base/policy for every compared signature, and recheck the relevant queue/branch version before promotion: the target branch can advance during a slow Tango call even though dependency messages are queue-partitioned. That recheck cannot be atomic with an external VCS update; continue relying on the landing service's final merge precondition rather than mixing incompatible signatures. Initial native Tango support is limited to compatible GitHub PR URIs; Git/Phabricator need an explicit adapter or conservative fallback. Verify Tango's application semantics against the queue's actual merge strategy before rolling out.
 3. Make **at most one** `GetChangedTargets` request per missing batch signature, regardless of the number of in-flight peers; set `MaxDistance=-1` and omit hashes/tags/attributes. Buffer only the IDs of actual changed old/new targets until all metadata arrives, resolve their canonical labels, sort/dedupe, and form the impact signature. Do **not** include an unchanged target merely because its name appears in `direct_dependencies` metadata. Treat unknown mappings, premature EOF, cancellation, or a partial response as failed analysis, not an empty result.
 4. Persist an **immutable, keyed summary** by `(queue, batch ID, base tree/revision, graph strategy, impact-policy version)`, with a small batch-keyed reference if retrieval needs one. Store compact sorted label fingerprints and a count/checksum or exact canonical labels as appropriate; a stable 64-bit hash collision can only cause a **false positive** overlap, not a false negative, provided the same canonicalization and hash version are used everywhere. Fingerprints need no shared mutable in-process dictionary; Tango response IDs are ephemeral. Use a simple two-pointer sorted-set intersection; avoid `map[string]Target` and `map[uint64]struct{}` for persisted signatures. Keep large payloads out of `entity.Batch`, request logs, and queue messages.
@@ -81,7 +103,26 @@ This is a **structural sensitivity test**, not a conflict accuracy measurement: 
 
 ## How to rerun
 
-Run from `~/go-code` against a checked-out revision with working Bazel dependencies (its current Bazel configuration disables Bzlmod):
+Run the **complete** query from `~/go-code` against a known checked-out revision (this checkout disables Bzlmod). On download failures, retry the **identical** command up to 20 times; do not treat a nonzero exit or a partial stream as a complete graph:
+
+```sh
+bazel query --order_output=no --proto:locations --noproto:default_values --output=streamed_proto \
+  '//external:all-targets + deps(//...:all-targets)' \
+  > /tmp/sq-go-code-full-20260928.streamed_proto
+```
+
+Run the Go evaluator from this SubmitQueue checkout without a subtree filter:
+
+```sh
+go run ./tool/tangograph-eval \
+  -input /tmp/sq-go-code-full-20260928.streamed_proto \
+  -query '//external:all-targets + deps(//...:all-targets)' \
+  -go-code-revision c5655f3f7e87f \
+  -tango-revision 50b3695a9909f19b78a3b1b35c095c9a8331d9db
+go test ./tool/tangograph-eval
+```
+
+The **earlier subtree queries**, useful for comparing local and whole-repo behavior, can still be reproduced from `~/go-code`:
 
 ```sh
 bazel query --order_output=no --proto:locations --noproto:default_values --output=streamed_proto \
@@ -89,7 +130,7 @@ bazel query --order_output=no --proto:locations --noproto:default_values --outpu
   > /tmp/sq-code-merge-tango.streamed_proto
 ```
 
-Run from this SubmitQueue branch, supplying the **counts corresponding to the actual snapshot** if projecting:
+Run the earlier subtree projection from this SubmitQueue branch, supplying the **counts corresponding to the actual snapshot**:
 
 ```sh
 go run ./tool/tangograph-eval -input /tmp/sq-code-merge-tango.streamed_proto \
@@ -99,8 +140,8 @@ go run ./tool/tangograph-eval -input /tmp/sq-code-merge-tango.streamed_proto \
 go test ./tool/tangograph-eval
 ```
 
-For the other successful samples, substitute `//src/code.uber.internal/devexp/buildkite/` (156 BUILD files) or `//src/code.uber.internal/marketplace/fulfillment/` (143 BUILD files). Omit `-scope` and the BUILD-file counts to measure the closed graph actually returned by Bazel. Counts can be rechecked with `git ls-files '*BUILD.bazel'` and the corresponding subtree pathspec. Input `-` accepts a pipe, but an input file lets the same raw query be analyzed more than once. The evaluator intentionally commits **aggregate JSON only**: raw build-proto dumps are bulky and contain internal target names.
+For the other earlier samples, substitute `//src/code.uber.internal/devexp/buildkite/` (156 BUILD files) or `//src/code.uber.internal/marketplace/fulfillment/` (143 BUILD files). Omit `-scope` and the BUILD-file counts to measure the closed subgraph returned by Bazel. Counts can be rechecked with `git ls-files '*BUILD.bazel'` and the corresponding subtree pathspec. Input `-` accepts a pipe, but an input file lets the same raw query be analyzed more than once. The evaluator intentionally commits **aggregate JSON and retry metadata only**: raw build-proto dumps are bulky and contain internal target names.
 
 ## Source of truth and limitations
 
-The Tango source and schema cited above are pinned to the commit inspected, not hypothetical future endpoints. The output-configuration and TGB properties are from its implementation, and the Bazel query shape is from Tango's [native graph runner](https://github.com/uber/tango/blob/50b3695a9909f19b78a3b1b35c095c9a8331d9db/graphrunner/native.go). The sample summaries record actual Bazel-query bytes and instrumented Go-model heap/protobuf sizes; projections, synthetic impacts, hash contents, compression in a real Tango deployment, and the final queue policy all still require validation against a running Tango server and a representative full-repository change workload.
+The Tango source and schema cited above are pinned to the commit inspected, not hypothetical future endpoints. The output-configuration and TGB properties are from its implementation, and the Bazel query shape is from Tango's [native graph runner](https://github.com/uber/tango/blob/50b3695a9909f19b78a3b1b35c095c9a8331d9db/graphrunner/native.go). The successful complete-query and subtree summaries contain actual Bazel-query bytes and instrumented Go-model heap/protobuf sizes; the earlier projections, synthetic impacts, hash contents, compression in a real Tango deployment, and the final queue policy still need validation against a running Tango server and a representative **full-repository change workload**.

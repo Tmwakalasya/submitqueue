@@ -15,6 +15,7 @@ Design documents and technical proposals, grouped by scope. Shared/cross-cutting
 
 ## SubmitQueue
 
+- [Tango Conflict Analysis](submitqueue/tango-conflict-analysis.md) - Measurements of go-code's Bazel target graph and a proposed stateless Tango-backed conflict analyzer
 - [Orchestrator Workflow](submitqueue/workflow.md) - Queue-driven controller pipeline from gateway entry through batching, scoring, build, land, and conclude
 - [Gateway History APIs](submitqueue/history-api.md) - Request lifecycle history exposed through separate request ID and change ID endpoints
 - [Build Runner](submitqueue/build-runner.md) - Vendor-agnostic BuildRunner interface, provider-neutral BuildStatus lifecycle, and how the orchestrator wires it into the build stage
