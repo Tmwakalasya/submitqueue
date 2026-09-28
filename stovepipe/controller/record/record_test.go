@@ -71,14 +71,15 @@ var testChangeTime = time.Unix(1_700_000_000, 0).UTC()
 // recordMocks bundles the mocks a record controller test case wires
 // expectations on.
 type recordMocks struct {
-	reqStore      *storagemock.MockRequestStore
-	queueStore    *storagemock.MockQueueStore
-	factStore     *storagemock.MockValidationFactStore
-	store         *storagemock.MockStorage
-	materializer  *requestlogmock.MockMaterializer
-	sourceControl *sourcecontrolmock.MockSourceControl
-	hooks         *hookRecorder
-	metricsScope  tally.TestScope
+	reqStore        *storagemock.MockRequestStore
+	requestLogStore *storagemock.MockRequestLogStore
+	queueStore      *storagemock.MockQueueStore
+	factStore       *storagemock.MockValidationFactStore
+	store           *storagemock.MockStorage
+	materializer    *requestlogmock.MockMaterializer
+	sourceControl   *sourcecontrolmock.MockSourceControl
+	hooks           *hookRecorder
+	metricsScope    tally.TestScope
 }
 
 // hookRecorder stands in for the hook topic, decoding whatever the controller
@@ -145,17 +146,22 @@ func newControllerForTopic(t *testing.T, ctrl *gomock.Controller, topicKey consu
 
 	scope := tally.NewTestScope("", nil)
 	m := recordMocks{
-		reqStore:      storagemock.NewMockRequestStore(ctrl),
-		queueStore:    storagemock.NewMockQueueStore(ctrl),
-		factStore:     storagemock.NewMockValidationFactStore(ctrl),
-		store:         storagemock.NewMockStorage(ctrl),
-		materializer:  requestlogmock.NewMockMaterializer(ctrl),
-		sourceControl: sourcecontrolmock.NewMockSourceControl(ctrl),
-		hooks:         &hookRecorder{},
-		metricsScope:  scope,
+		reqStore:        storagemock.NewMockRequestStore(ctrl),
+		requestLogStore: storagemock.NewMockRequestLogStore(ctrl),
+		queueStore:      storagemock.NewMockQueueStore(ctrl),
+		factStore:       storagemock.NewMockValidationFactStore(ctrl),
+		store:           storagemock.NewMockStorage(ctrl),
+		materializer:    requestlogmock.NewMockMaterializer(ctrl),
+		sourceControl:   sourcecontrolmock.NewMockSourceControl(ctrl),
+		hooks:           &hookRecorder{},
+		metricsScope:    scope,
 	}
 
 	m.store.EXPECT().GetRequestStore().Return(m.reqStore).AnyTimes()
+	m.store.EXPECT().GetRequestLogStore().Return(m.requestLogStore).AnyTimes()
+	m.requestLogStore.EXPECT().Get(gomock.Any(), testID, requestlog.RequestStateLogID(2)).Return(entity.RequestLog{
+		Metadata: map[string]string{requestlog.MetadataKeyBuildID: "bk-1"},
+	}, nil).AnyTimes()
 	m.store.EXPECT().GetQueueStore().Return(m.queueStore).AnyTimes()
 	m.store.EXPECT().GetValidationFactStore().Return(m.factStore).AnyTimes()
 	m.materializer.EXPECT().PersistLog(gomock.Any(), m.store, gomock.Any()).DoAndReturn(
@@ -340,7 +346,9 @@ func TestProcess_RecordsNamedProjectResults(t *testing.T) {
 	c.projectResultFactory = projectResultFactory
 	projectResultFactory.EXPECT().For(projectresult.Config{QueueName: testQueue}).
 		Return(projectResultResolver, nil)
-	projectResultResolver.EXPECT().Resolve(gomock.Any(), gomock.Any()).Return([]projectresult.Result{
+	projectResultResolver.EXPECT().Resolve(
+		gomock.Any(), requestWithState(entity.RequestStateFailed), "bk-1",
+	).Return([]projectresult.Result{
 		{Project: "project-a", Degree: entity.DegreeBroken},
 		{Project: "project-b", Degree: entity.DegreeBroken},
 	}, nil)
@@ -377,6 +385,19 @@ func TestProcess_RecordsNamedProjectResults(t *testing.T) {
 	assert.Equal(t, "2", logs[1].Metadata[requestlog.MetadataKeyProjectFactCount])
 }
 
+func TestRecordProjectFacts_SkipsResolutionWithoutBuildID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	c, m := newController(t, ctrl)
+	c.projectResultFactory = projectresultmock.NewMockFactory(ctrl)
+	request := requestWithState(entity.RequestStateFailed)
+	request.Version++
+	m.requestLogStore.EXPECT().Get(
+		gomock.Any(), request.ID, requestlog.RequestStateLogID(request.Version),
+	).Return(entity.RequestLog{}, nil)
+
+	require.NoError(t, c.recordProjectFacts(context.Background(), m.store, request))
+}
+
 func TestProcess_RejectsInvalidProjectResultsBeforeWritingFacts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	c, m := newController(t, ctrl)
@@ -385,7 +406,7 @@ func TestProcess_RejectsInvalidProjectResultsBeforeWritingFacts(t *testing.T) {
 	c.projectResultFactory = projectResultFactory
 	projectResultFactory.EXPECT().For(projectresult.Config{QueueName: testQueue}).
 		Return(projectResultResolver, nil)
-	projectResultResolver.EXPECT().Resolve(gomock.Any(), gomock.Any()).Return([]projectresult.Result{
+	projectResultResolver.EXPECT().Resolve(gomock.Any(), gomock.Any(), gomock.Any()).Return([]projectresult.Result{
 		{Project: "project-a", Degree: entity.DegreeBroken},
 		{Project: "project-b", Degree: math.NaN()},
 	}, nil)

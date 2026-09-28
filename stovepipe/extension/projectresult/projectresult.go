@@ -33,11 +33,11 @@ type Result struct {
 	Degree float64
 }
 
-// Resolver attributes one terminal validation request to named project
+// Resolver attributes one terminal validation request and its selected build to named project
 // outcomes. Implementations may use any repository-specific analysis they need
 // to obtain those outcomes. Returning no results is valid.
 type Resolver interface {
-	Resolve(ctx context.Context, request entity.Request) ([]Result, error)
+	Resolve(ctx context.Context, request entity.Request, buildID string) ([]Result, error)
 }
 
 // Config carries the queue identity handed to a Factory.

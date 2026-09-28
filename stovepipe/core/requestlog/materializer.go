@@ -77,7 +77,7 @@ func NewRequestStateLog(request entity.Request, outcomeReason entity.RequestOutc
 		metadata[MetadataKeyBaseURI] = request.BaseURI
 	}
 	return entity.RequestLog{
-		ID:             publish.IntentID(_occurrenceKindState, strconv.FormatInt(int64(request.Version), 10)),
+		ID:             RequestStateLogID(request.Version),
 		Queue:          request.Queue,
 		RequestID:      request.ID,
 		State:          request.State,
@@ -85,6 +85,11 @@ func NewRequestStateLog(request entity.Request, outcomeReason entity.RequestOutc
 		OutcomeReason:  outcomeReason,
 		Metadata:       metadata,
 	}
+}
+
+// RequestStateLogID returns the stable identity of a request state occurrence.
+func RequestStateLogID(requestVersion int32) string {
+	return publish.IntentID(_occurrenceKindState, strconv.FormatInt(int64(requestVersion), 10))
 }
 
 // NewRequestEventLog constructs a stable occurrence for a durable request lifecycle event.

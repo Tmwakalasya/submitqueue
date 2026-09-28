@@ -184,11 +184,18 @@ func (c *Controller) Process(ctx context.Context, delivery consumer.Delivery) er
 }
 
 func (c *Controller) recordProjectFacts(ctx context.Context, store storage.Storage, request entity.Request) error {
+	buildID, err := terminalBuildID(ctx, store, request)
+	if err != nil {
+		return err
+	}
+	if buildID == "" {
+		return nil
+	}
 	resolver, err := c.projectResultFactory.For(projectresult.Config{QueueName: request.Queue})
 	if err != nil {
 		return fmt.Errorf("failed to resolve project result resolver for queue %q: %w", request.Queue, err)
 	}
-	results, err := resolver.Resolve(ctx, request)
+	results, err := resolver.Resolve(ctx, request, buildID)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project results for request %q: %w", request.ID, err)
 	}
@@ -212,6 +219,14 @@ func (c *Controller) recordProjectFacts(ctx context.Context, store storage.Stora
 		return nil
 	}
 	return c.persistProjectFactsRecordedLog(ctx, store, request, len(results))
+}
+
+func terminalBuildID(ctx context.Context, store storage.Storage, request entity.Request) (string, error) {
+	log, err := store.GetRequestLogStore().Get(ctx, request.ID, requestlog.RequestStateLogID(request.Version))
+	if err != nil {
+		return "", fmt.Errorf("failed to load terminal state for request %s: %w", request.ID, err)
+	}
+	return log.Metadata[requestlog.MetadataKeyBuildID], nil
 }
 
 func validateProjectResults(request entity.Request, results []projectresult.Result) error {
