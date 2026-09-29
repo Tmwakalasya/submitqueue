@@ -21,3 +21,7 @@ The Bazel graph and Go evaluator were run on the full checkout. The protobuf and
 ## Proposed approach
 
 Use Tango's changed-target stream to produce a durable, compact impact signature per batch. Compare signatures at a common pinned base revision rather than transferring the whole monorepo graph into stateless SubmitQueue controllers. Fix or isolate Tango's incomplete compared-target cache key before using it as a conflict oracle. The technical report describes the integration constraints, measurements, and Go-first optimization plan.
+
+## Thousands of in-flight batches — September 29, 2026
+
+**A full signature fetch for every in-flight batch is not the scalable design.** The current dependency-analysis controller already loads every active `Batch` before invoking its conflict analyzer; doing another store read for each batch's full signature would add thousands of reads per admission. The [cross-check design](doc/rfc/submitqueue/tango-conflict-analysis.md#cross-checking-thousands-of-in-flight-batches) proposes a durable target-fingerprint→batch-ID mapping: look up postings for the *new* batch's affected targets, union their IDs, and validate the matched batches' current state. Complete index writes must succeed before a batch becomes `Created`; an incomplete index or incompatible graph epoch fails closed. A small, **complete** signature carried in the already-loaded `Batch` is a bounded interim option; truly avoiding the controller's initial all-batch hydration also requires changing that controller/analyzer boundary.
