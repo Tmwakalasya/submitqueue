@@ -66,9 +66,27 @@ These are intentionally **cold, all-batch read-only sweeps** of `B` existing sig
 
 This is **incremental post-GC heap for the `B` loaded target signatures and one candidate**, not a persistent-index heap, total process RSS or database footprint; common `Batch` entities, decode buffers and ID registry storage are excluded. At `B=1,000, K=5N` the fetched payload model is **96.4 MiB ID64**, **1,230.7 MiB NameKey**, or **8,006.1 MiB TangoSnapshot raw** (**2,859.2 MiB** if optional per-message gzip were used). The [detailed report](doc/rfc/submitqueue/tango-conflict-analysis.md#memory-estimate--one-stateless-controller) has the fetched-byte table for all nine cases.
 
+### Blob-storage fetch latency — signatures only
+
+If **one signature per in-flight batch is stored as a separate blob outside the `Batch` table**, the following is the modeled latency to bring all `B` signatures into **one stateless controller**, **excluding** `Batch`-table reads, decoding and conflict comparison. Use a representative **S3 Standard-like** planning scenario: **150 ms per GET to first byte**, **32 parallel GETs**, and **100 MiB/s effective aggregate download throughput per controller**. The 150 ms is the midpoint of [AWS's 100–200 ms small-object first-byte guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html); parallel requests are [recommended for throughput](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance-design-patterns.html). The bandwidth and worker count are **assumptions**, not measured SubmitQueue or provider performance. `T_fetch = ceil(B/32) × 0.150 s + fetched MiB / (100 MiB/s)`.
+
+| In-flight `B` | Targets/batch `K` | GET first-byte wave | ID64 blobs | NameKey blobs | TangoSnapshot raw blobs | TangoSnapshot gzip blobs |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | N | 0.60 s | 0.62 s | 0.85 s | 2.20 s | 1.17 s |
+| 100 | 2N | 0.60 s | 0.64 s | 1.09 s | 3.81 s | 1.75 s |
+| 100 | 5N | 0.60 s | 0.70 s | 1.83 s | 8.61 s | 3.46 s |
+| 500 | N | 2.40 s | 2.50 s | 3.63 s | 10.38 s | 5.26 s |
+| 500 | 2N | 2.40 s | 2.59 s | 4.86 s | 18.45 s | 8.13 s |
+| 500 | 5N | 2.40 s | 2.88 s | 8.55 s | 42.45 s | 16.70 s |
+| 1,000 | N | 4.80 s | 4.99 s | 7.26 s | 20.77 s | 10.51 s |
+| 1,000 | 2N | 4.80 s | 5.19 s | 9.72 s | 36.90 s | 16.26 s |
+| 1,000 | 5N | 4.80 s | 5.76 s | 17.11 s | 84.86 s | 33.39 s |
+
+The GET wave dominates **many small ID64 blobs**; bytes dominate large TangoSnapshot transfers. These are additive planning estimates, not observed backend latency or an SLO; GET startup and transfers can overlap, while throttling/decompression/contending controllers can worsen them. See the [detailed method and column definitions](doc/rfc/submitqueue/tango-conflict-analysis.md#blob-storage-fetch-latency--signatures-only) and [calculated input-byte and latency artifact](doc/rfc/submitqueue/tango-eval/blob-fetch-latency-20260930.json). A persistent target→batch posting index avoids fetching all `B` signature blobs on the admission hot path.
+
 ### Latency estimate — one batch versus all in-flight batches
 
-For this **one** read-only comparison, model (1) `ceil(B/16) × 5 ms` for the current controller's `B` batch-entity reads, (2) another `ceil(B/16) × 5 ms` for `B` separately stored signatures, (3) transfer of the table's raw or optional gzip bytes at **100 MiB/s aggregate**, and (4) measured in-process intersection/scan CPU. **ID64 IDs ready** excludes registry I/O; **ID64 register candidate** adds `K` registry checks and conditional creates of previously unseen candidate labels, using the earlier benchmark's count of registry entries. NameKey requires no ID registry. TangoSnapshot gzip omits decompression CPU.
+**The following earlier one-batch total uses a 5-ms primary-key signature store, *not* the blob GET assumptions above.** For this **one** read-only comparison, model (1) `ceil(B/16) × 5 ms` for the current controller's `B` batch-entity reads, (2) another `ceil(B/16) × 5 ms` for `B` separately stored signatures, (3) transfer of the table's raw or optional gzip bytes at **100 MiB/s aggregate**, and (4) measured in-process intersection/scan CPU. **ID64 IDs ready** excludes registry I/O; **ID64 register candidate** adds `K` registry checks and conditional creates of previously unseen candidate labels, using the earlier benchmark's count of registry entries. NameKey requires no ID registry. TangoSnapshot gzip omits decompression CPU. If blobs are used, **replace** the signature-read-plus-transfer term with the blob-fetch table; do **not** simply add the two tables.
 
 | In-flight `B` | Targets/batch `K` | ID64: IDs ready | ID64: register candidate | NameKey | TangoSnapshot raw | TangoSnapshot gzip |
 |---:|---:|---:|---:|---:|---:|---:|

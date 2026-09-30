@@ -255,9 +255,39 @@ The [cold-scan Go evaluator](../../../tool/tangograph-eval/coldscan.go) measured
 
 These are **modeled snapshot payload bytes summed over `B` reads**, not the actual SQL/object-store bytes or the cost of the current `B` `Batch` hydration reads. ID64 and NameKey exclude per-batch framing, checksums, database-row metadata and compression; TangoSnapshot gzip is measured best-speed per modeled response message, **not** an observed storage codec. Actual changed-target messages can contain both old and new target detail.
 
+#### Blob-storage fetch latency — signatures only
+
+Suppose each existing batch's complete signature lives in **one separate blob keyed by batch ID**, outside the `Batch` table, and a fresh stateless controller knows the `B` eligible batch IDs. This section estimates **only the time to fetch the `B` blobs into that controller**, before decoding or testing any intersections. It does **not** include listing/hydrating `Batch` rows, generating or registering the incoming batch's signature, the ID→name registry, conflict comparison CPU, or writes. The backing blob service is not selected in this repository; use an **S3 Standard-like planning analogy**, not an assertion that SubmitQueue already uses S3.
+
+For a moderate single-controller blob download budget, assume **150 ms first-byte latency per GET**, **32 simultaneous GETs**, and **100 MiB/s effective aggregate payload throughput**. The 150 ms is the midpoint of the [AWS S3 performance guide's 100–200 ms small-object first-byte range](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html); [AWS recommends parallel GET requests to scale throughput](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance-design-patterns.html). The 32-worker limit and **100 MiB/s are explicit capacity-planning assumptions**, not AWS guarantees or measurements of the eventual internal blob backend. Additive approximation: `T_fetch(B, payload MiB) = ceil(B / 32) × 0.150 s + payload MiB / (100 MiB/s)`. The first term is a common queued-GET/first-byte wave; the second is transfer of all bytes fetched by this one controller. Transfer and GET startup can partly overlap, so this is a conservative simplified scenario rather than a measured latency distribution or strict bound.
+
+| In-flight `B` | Targets/batch `K` | 32-worker GET first-byte wave | ID64 blob fetch | NameKey blob fetch | TangoSnapshot raw blob fetch | TangoSnapshot gzip blob fetch |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | N (2,527) | 0.60 s | 0.62 s | 0.85 s | 2.20 s | 1.17 s |
+| 100 | 2N (5,054) | 0.60 s | 0.64 s | 1.09 s | 3.81 s | 1.75 s |
+| 100 | 5N (12,635) | 0.60 s | 0.70 s | 1.83 s | 8.61 s | 3.46 s |
+| 500 | N | 2.40 s | 2.50 s | 3.63 s | 10.38 s | 5.26 s |
+| 500 | 2N | 2.40 s | 2.59 s | 4.86 s | 18.45 s | 8.13 s |
+| 500 | 5N | 2.40 s | 2.88 s | 8.55 s | 42.45 s | 16.70 s |
+| 1,000 | N | 4.80 s | 4.99 s | 7.26 s | 20.77 s | 10.51 s |
+| 1,000 | 2N | 4.80 s | 5.19 s | 9.72 s | 36.90 s | 16.26 s |
+| 1,000 | 5N | 4.80 s | 5.76 s | 17.11 s | 84.86 s | 33.39 s |
+
+| Blob-fetch table field | Meaning |
+|---|---|
+| In-flight `B`, targets/batch `K` | `B` distinct stored blobs are fetched; `K` is the affected-target count **in each blob**, with `N=2,527`, `2N=5,054`, `5N=12,635`. |
+| 32-worker GET first-byte wave | `ceil(B/32) × 150 ms`, shared by all designs before their modeled byte-transfer term. |
+| ID64 blob fetch | GET wave + raw `8 × B × K` ID bytes / 100 MiB/s; does not read the separately stored ID-name registry. |
+| NameKey blob fetch | GET wave + the preceding table's UTF-8 name bytes and unsigned-varint lengths / 100 MiB/s. |
+| TangoSnapshot raw / gzip blob fetch | GET wave + the preceding table's modeled protobuf or optional per-message gzip bytes / 100 MiB/s; gzip assumes blobs were stored compressed and excludes decompression. |
+
+For example, at `B=1,000, K=N`, ID64 fetches **19.3 MiB**, so the estimate is `ceil(1000/32) × 0.150 s + 19.3 MiB / (100 MiB/s) ≈ 4.99 s`. The **4.80 s GET wave**, not ID bytes, dominates. NameKey reaches **7.26 s** and TangoSnapshot raw reaches **20.77 s**. For sensitivity, using **16** rather than 32 concurrent GETs increases the common wave by **0.45/2.40/4.65 s** for `B=100/500/1,000`; halving bandwidth to 50 MiB/s doubles only the transfer term. Blob headers/framing, key lookup, decode/decompression, retries, throttling and multiple controllers contending for bandwidth are not measured. The [calculated nine-case JSON artifact](tango-eval/blob-fetch-latency-20260930.json) records each input byte count and the assumptions.
+
+**Do not add this entire fetch table to the next end-to-end table:** that older point-store model already includes a signature-read wave and payload transfer under **different** read assumptions (5 ms GETs, concurrency 16). For a chosen blob backend, **replace** that wave and transfer with this blob-fetch term, then add the common `Batch`-table hydration and locally measured comparison CPU (plus any candidate ID registration). A durable target→batch posting index is a different design and does not fetch `B` per-batch signature blobs on the conflict-check hot path.
+
 #### Latency estimate — one batch versus all in-flight batches
 
-For each row, this is the modeled wall time for **one new batch to find all conflicts**, with its candidate affected-target set already computed. Assume each independent primary-key read takes **5 ms**, at most **16 reads** run concurrently, and one controller receives an aggregate **100 MiB/s** of uncompressed or gzip network transfer. Existing `ListByStates` hydration costs `R(B)=ceil(B/16)×5 ms`; fetching `B` stored signatures is a *second* `R(B)` wave. The modeled analysis time is `R(B) + R(B) + fetched MiB / (100 MiB/s) + locally measured intersection/scan CPU`. ID64 ready assumes candidate IDs were already registered; ID64 register additionally pays `R(K)` name-registry checks and `R(fresh)` conditional creates for candidate labels not in the **simulated in-flight registry** (`fresh` is recorded in the earlier ID index artifacts). TangoSnapshot timings reuse its earlier scan CPU and protobuf/gzip sizes under exactly these same assumptions. There is **no per-batch source-graph computation or posting write in this read-only comparison**.
+For each row, this is the **earlier point-store** modeled wall time for **one new batch to find all conflicts**, with its candidate affected-target set already computed. These figures **do not use the blob-storage GET assumptions in the separate fetch table above**. They assume each independent primary-key read takes **5 ms**, at most **16 reads** run concurrently, and one controller receives an aggregate **100 MiB/s** of uncompressed or gzip network transfer. Existing `ListByStates` hydration costs `R(B)=ceil(B/16)×5 ms`; fetching `B` stored signatures is a *second* `R(B)` wave. The modeled analysis time is `R(B) + R(B) + fetched MiB / (100 MiB/s) + locally measured intersection/scan CPU`. ID64 ready assumes candidate IDs were already registered; ID64 register additionally pays `R(K)` name-registry checks and `R(fresh)` conditional creates for candidate labels not in the **simulated in-flight registry** (`fresh` is recorded in the earlier ID index artifacts). TangoSnapshot timings reuse its earlier scan CPU and protobuf/gzip sizes under exactly these same assumptions. There is **no per-batch source-graph computation or posting write in this read-only comparison**.
 
 | In-flight `B` | Targets/batch `K` | ID64: IDs ready | ID64: register candidate | NameKey | TangoSnapshot raw | TangoSnapshot gzip |
 |---:|---:|---:|---:|---:|---:|---:|
