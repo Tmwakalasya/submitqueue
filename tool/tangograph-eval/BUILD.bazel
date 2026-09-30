@@ -4,6 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "bench.go",
+        "coldscan.go",
         "impact.go",
         "main.go",
         "measure.go",
@@ -24,6 +25,7 @@ go_test(
     name = "go_default_test",
     srcs = [
         "bench_test.go",
+        "coldscan_test.go",
         "impact_test.go",
         "measure_test.go",
         "parse_test.go",

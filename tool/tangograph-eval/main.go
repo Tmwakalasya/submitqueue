@@ -61,6 +61,7 @@ func run(args []string, out, errOut io.Writer) error {
 	impactSeeds := flags.Int("impact-seeds", 64, "number of evenly distributed source-file nodes to test for reverse-closure overlap (0 to skip)")
 	impactPrefix := flags.String("impact-source-prefix", "", "select source-file change seeds under this label prefix (default: all main-repo source files)")
 	benchmark := flags.Bool("benchmark", false, "run synthetic per-batch impact benchmarks on labels sampled from the Bazel input")
+	benchmarkColdScan := flags.Bool("benchmark-cold-scan", false, "measure one-candidate stateless full scans of stored ID and name signatures")
 	benchmarkTargets := flags.String("benchmark-targets", "100,1000", "comma-separated affected targets per synthetic batch")
 	benchmarkBatches := flags.String("benchmark-batches", "100,500,1000", "comma-separated in-flight batch counts")
 	benchmarkRTT := flags.Float64("benchmark-rtt-ms", 5, "illustrative per-key storage read/write RTT in milliseconds")
@@ -71,6 +72,9 @@ func run(args []string, out, errOut io.Writer) error {
 	}
 	if *maxMessageBytes < 128 {
 		return fmt.Errorf("-max-message-bytes must be at least 128")
+	}
+	if *benchmark && *benchmarkColdScan {
+		return fmt.Errorf("-benchmark and -benchmark-cold-scan cannot be used together")
 	}
 	if *impactSeeds < 0 || *impactSeeds > 256 {
 		return fmt.Errorf("-impact-seeds must be between 0 and 256")
@@ -103,6 +107,22 @@ func run(args []string, out, errOut io.Writer) error {
 	}
 	if *benchmark {
 		measured, err := benchmarkBatchImpacts(graph, *benchmarkBatches, *benchmarkTargets, benchAssumptions{
+			RTTMilliseconds:      *benchmarkRTT,
+			Concurrency:          *benchmarkConcurrency,
+			TransferMiBPerSecond: *benchmarkTransfer,
+		})
+		if err != nil {
+			return err
+		}
+		measured.Input = *input
+		measured.InputBytes = counter.bytes
+		measured.GoCodeRevision = *revision
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(measured)
+	}
+	if *benchmarkColdScan {
+		measured, err := benchmarkColdStatelessScans(graph, *benchmarkBatches, *benchmarkTargets, benchAssumptions{
 			RTTMilliseconds:      *benchmarkRTT,
 			Concurrency:          *benchmarkConcurrency,
 			TransferMiBPerSecond: *benchmarkTransfer,
