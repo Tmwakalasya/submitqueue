@@ -1,0 +1,170 @@
+{
+  "input": "/tmp/sq-go-code-full-20260928.streamed_proto",
+  "bazel_streamed_proto_input_bytes": 2799274578,
+  "go_code_revision": "c5655f3f7e87f",
+  "go_version": "go1.26.3",
+  "graph_targets": 2969283,
+  "main_repo_labels": 2538730,
+  "mean_label_bytes": 100.98325383164023,
+  "mean_capped_dependencies": 4.965338180901474,
+  "max_dependencies_per_target": 32,
+  "illustrative_latency_assumptions": {
+    "point_read_or_write_rtt_ms": 5,
+    "max_concurrent_point_operations": 16,
+    "uncompressed_transfer_mib_per_second": 100
+  },
+  "notes": [
+    "Deterministic synthetic impact sets sampled from actual main-repo Bazel labels; not observed PR diffs.",
+    "Tango-like representation models one OptimizedTarget plus target/dependency metadata per affected label, with hashes/tags/attributes omitted as in default OutputConfig. An actual ChangedTarget can contain both old and new targets.",
+    "Live heap and query time are local in-process Go measurements. Posting/registry reads and protobuf bytes are modeled; no remote storage or Tango RPC latency is measured.",
+    "Heap excludes the shared input label pool and generated workload indices; it includes each mode's per-batch records, postings, and sparse registry.",
+    "All synthetic records and indexes are resident in one Go process for measurement; reported heap is not a stateless controller's request heap or measured database size.",
+    "Remote-latency model assumes independent parallel point operations without connection-pool, hot-row, transaction, or queue contention; it is not an observed backend latency."
+  ],
+  "cases": [
+    {
+      "in_flight_batches": 100,
+      "targets_per_batch": 2527,
+      "candidate_targets": 2527,
+      "registered_64bit_index": {
+        "live_heap_bytes": 64133744,
+        "build_milliseconds": 449.157,
+        "query_microseconds": 118.101,
+        "query_alloc_bytes": 112,
+        "matching_batches": 88,
+        "posting_reads": 2527,
+        "registration_reads": 2527,
+        "posting_keys": 240720,
+        "name_registry_entries": 243000,
+        "raw_impact_bytes": 2021600
+      },
+      "canonical_label_index": {
+        "live_heap_bytes": 58025232,
+        "build_milliseconds": 430.635,
+        "query_microseconds": 310.29767441860463,
+        "query_alloc_bytes": 112,
+        "matching_batches": 88,
+        "posting_reads": 2527,
+        "registration_reads": 0,
+        "posting_keys": 240720,
+        "raw_label_bytes": 25513916
+      },
+      "tango_optimized_target_scan": {
+        "live_heap_bytes": 275564648,
+        "build_milliseconds": 1356.258,
+        "query_microseconds": 17983.083333333332,
+        "query_alloc_bytes": 0,
+        "matching_batches": 88,
+        "posting_reads": 100,
+        "registration_reads": 0,
+        "raw_label_bytes": 151824236,
+        "modeled_protobuf_bytes": 167321217,
+        "modeled_gzip_bytes": 59889439
+      },
+      "illustrative_remote_latency": {
+        "common_batch_hydration_ms": 35,
+        "registered_64bit_index_ms": 3120.118101,
+        "registered_64bit_index_warm_registry_ms": 1615.118101,
+        "canonical_label_index_ms": 1615.3102976744185,
+        "tango_optimized_target_scan_ms": 1683.6825557607015,
+        "tango_optimized_target_scan_gzip_ms": 659.1332813161214
+      }
+    },
+    {
+      "in_flight_batches": 500,
+      "targets_per_batch": 2527,
+      "candidate_targets": 2527,
+      "registered_64bit_index": {
+        "live_heap_bytes": 266711504,
+        "build_milliseconds": 2273.862,
+        "query_microseconds": 173.707,
+        "query_alloc_bytes": 512,
+        "matching_batches": 455,
+        "posting_reads": 2527,
+        "registration_reads": 2527,
+        "posting_keys": 996067,
+        "name_registry_entries": 997597,
+        "raw_impact_bytes": 10108000
+      },
+      "canonical_label_index": {
+        "live_heap_bytes": 266799864,
+        "build_milliseconds": 1985.47,
+        "query_microseconds": 340.1649659863946,
+        "query_alloc_bytes": 512,
+        "matching_batches": 455,
+        "posting_reads": 2527,
+        "registration_reads": 0,
+        "posting_keys": 996067,
+        "raw_label_bytes": 127564798
+      },
+      "tango_optimized_target_scan": {
+        "live_heap_bytes": 1378983672,
+        "build_milliseconds": 5436.741,
+        "query_microseconds": 84304,
+        "query_alloc_bytes": 0,
+        "matching_batches": 455,
+        "posting_reads": 500,
+        "registration_reads": 0,
+        "raw_label_bytes": 759385834,
+        "modeled_protobuf_bytes": 836908246,
+        "modeled_gzip_bytes": 299526119
+      },
+      "illustrative_remote_latency": {
+        "common_batch_hydration_ms": 160,
+        "registered_64bit_index_ms": 3010.173707,
+        "registered_64bit_index_warm_registry_ms": 1740.173707,
+        "canonical_label_index_ms": 1740.3401649659863,
+        "tango_optimized_target_scan_ms": 8385.682993988037,
+        "tango_optimized_target_scan_gzip_ms": 3260.807667831421
+      }
+    },
+    {
+      "in_flight_batches": 1000,
+      "targets_per_batch": 2527,
+      "candidate_targets": 2527,
+      "registered_64bit_index": {
+        "live_heap_bytes": 350168560,
+        "build_milliseconds": 4418.563,
+        "query_microseconds": 201.6673387096774,
+        "query_alloc_bytes": 1024,
+        "matching_batches": 923,
+        "posting_reads": 2527,
+        "registration_reads": 2527,
+        "posting_keys": 1601887,
+        "name_registry_entries": 1602824,
+        "raw_impact_bytes": 20216000
+      },
+      "canonical_label_index": {
+        "live_heap_bytes": 431788192,
+        "build_milliseconds": 3632.733,
+        "query_microseconds": 427.758547008547,
+        "query_alloc_bytes": 1024,
+        "matching_batches": 923,
+        "posting_reads": 2527,
+        "registration_reads": 0,
+        "posting_keys": 1601887,
+        "raw_label_bytes": 255183871
+      },
+      "tango_optimized_target_scan": {
+        "live_heap_bytes": 2757614008,
+        "build_milliseconds": 12125.374,
+        "query_microseconds": 180945.5,
+        "query_alloc_bytes": 0,
+        "matching_batches": 923,
+        "posting_reads": 1000,
+        "registration_reads": 0,
+        "raw_label_bytes": 1519169195,
+        "modeled_protobuf_bytes": 1674259407,
+        "modeled_gzip_bytes": 599229123
+      },
+      "illustrative_remote_latency": {
+        "common_batch_hydration_ms": 315,
+        "registered_64bit_index_ms": 2980.2016673387097,
+        "registered_64bit_index_warm_registry_ms": 1895.2016673387097,
+        "canonical_label_index_ms": 1895.4277585470086,
+        "tango_optimized_target_scan_ms": 16777.927454574587,
+        "tango_optimized_target_scan_gzip_ms": 6525.639742477417
+      }
+    }
+  ]
+}

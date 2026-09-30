@@ -153,6 +153,157 @@ The following is a **latency model, not a benchmark of any storage backend**: as
 
 **Decision implication:** retain the ID-based inverted index only if small `K`, hot-key fan-out, and backend point-read/write latency measured on *real* queue changes justify it. At `K≈B`, 64-bit registration and per-target posting writes can dominate admission even though the in-process lookup is fast; a direct canonical-label posting key avoids the registry phase and can have similar live heap. A Tango-like stored snapshot with compression can also be competitive for **small `B` and large `K`** under the assumed network model, but its memory/wire cost grows with every in-flight batch and a real two-sided changed-target payload may be larger. Broad changes still need an explicit fail-closed policy; do not infer an SLO or choose a static threshold from synthetic uniformly sampled labels.
 
+### Hive-derived target counts: N, 2N and 5N (September 30, 2026)
+
+The closest relevant **Hive** source found is [`rawdata_user.kafka_hp_submitqueue_request_feature_event_nodedup`](tango-eval/hive-go-diff-targets-20260930.sql), a TIER_THREE feature-event table with `msg.targetschanged`, `msg.targetsadded`, `msg.targetsremoved`, `msg.diffids`, `msg.queueid`, `msg.stackheight`, and `msg.basesha` (verified against uMetadata). There was **no relevant canonical uMetric definition**; the generic table recommendations for "target graph" described unrelated pricing/driver graphs, so this table was selected from a targeted SubmitQueue dataset search and verified by its nested field descriptions and actual rows. It measures **SubmitQueue feature-event counters**, not a direct Tango `GetChangedTargets` response. The [executed SQL](tango-eval/hive-go-diff-targets-20260930.sql) is QueryBuilder report `mcDHURW0X`, run `PEOkkp0n`, Data Central execution `6a86dc71-00db-4c93-a38d-b07cb221e51d`; the [aggregate evidence](tango-eval/hive-go-diff-targets-20260930.json) stores no individual diffs. The independent [broad-tail SQL](tango-eval/hive-go-diff-tail-20260930.sql) is QueryBuilder report `F1fC14EDp`, run `kMpN5D03F`, Data Central execution `216b3b36-a5b2-48c7-9463-20af6272b804`; it reproduced the latest-per-diff count and sum as well as the broad-diff contribution from the same source.
+
+The SQL restricts `datestr` to **September 1–29, 2026**, `queueid='go'`, one diff ID and `stackheight=1`, complete non-null counts, and non-deleted rows. It takes the most recent event by `ts` for each immutable diff ID to avoid counting retries/remeasurements multiple times; all 62,957 eligible raw events have non-null timestamps and nonnegative counts, yielding **58,876 distinct diffs**. `targets_changed + targets_added + targets_removed` is an *affected-target proxy* for new, deleted and changed targets; the feature-event producer's category exclusivity was not independently verified. The resulting sum is **148,766,796**, arithmetic average **2,526.7816** affected targets per unique diff. Define integer **`N = round(2,526.7816) = 2,527`**, hence **`2N = 5,054`** and **`5N = 12,635`**. As a sensitivity check, deduplicating by `(diff ID, base SHA)` instead gives 60,614 observations and average **2,656.73** (+5.1%); the raw-event average **3,880.61** overweights repeats.
+
+**The mean is not typical.** The deduplicated median is approximately **42**, p90 **1,047**, p95 **3,327**, and p99 around **33–35 thousand** (approximate percentile sketches vary slightly by query plan). Only **233 / 58,876 diffs (0.40%)** have at least 100,000 affected targets, yet they contribute **98,355,004 / 148,766,796 (66.1%)** of the total; excluding these broad cases drops the mean to **859.64**. At most **2,884,044** targets were reported for one diff, close to the measured whole-graph node count. A broad-diff fail-closed path is therefore essential; the three `N` workloads below deliberately stress arithmetic-mean cardinalities, **not** the median request.
+
+| Hive source or SQL-derived field | Meaning in the executed N query |
+|---|---|
+| `datestr` | Hive date partition, restricted to September 1–29, 2026 to exclude the current partial day. |
+| `msg.queueid` | SubmitQueue queue name; `go` selects changes in the go-code queue. |
+| `msg.diffids`, `msg.diffids[1]` | IDs in the submitted stack; exactly one ID is required, and that ID is the per-code-change deduplication key. |
+| `msg.stackheight` | Reported stack size; requiring `1` excludes stacked-request aggregates. |
+| `msg.basesha` | Base commit used to measure target statistics; the alternative sensitivity groups by `(diff ID, base SHA)`. |
+| `msg.targetschanged` | Producer-reported count of modified build targets; the largest component of the affected-target proxy. |
+| `msg.targetsadded`, `msg.targetsremoved` | Producer-reported newly added and removed targets; both included in the proxy. |
+| `ts` | Feature-event production timestamp; descending order selects the latest observed event for each diff ID. |
+| `hadoop_isdeleted` | Soft-delete marker; only false or null records are considered. |
+| `affected_targets` | Derived sum of the preceding three target-count fields, *not* a directly stored Tango RPC count. |
+| `latest_event` | `ROW_NUMBER()` within each diff ID by descending timestamp/date; `1` selects its latest measurement. |
+
+The executed Presto result contains two grains, which should not be confused: `raw_events` repeats diffs with multiple feature events, while `unique_diff_latest` is the one-observation-per-diff estimate used for `N`.
+
+| Column in the Presto result | Meaning |
+|---|---|
+| `grain` | `raw_events` retains all qualifying rows; `unique_diff_latest` retains only the latest row for each single diff. |
+| `observations` | Number of rows at the stated grain: 62,957 feature events or 58,876 unique diffs. |
+| `sum_affected_targets` | Sum of `affected_targets` over the rows at this grain; 148,766,796 for unique diffs. |
+| `avg_affected_targets` | Arithmetic mean of affected-target proxy per row; **2,526.7816** per unique diff, the source of `N`. |
+| `avg_changed`, `avg_added`, `avg_removed` | Separate means of the three reported producer counters; for unique diffs they are 2,524.6627, 1.6947 and 0.4243 respectively. |
+| `p50_p90_p95_p99_p999` | Array of approximate 50th, 90th, 95th, 99th and 99.9th percentiles of `affected_targets` at the stated grain. |
+| `zero_target_observations` | Count of rows with zero reported affected targets; 5,942 among unique diffs. |
+| `ge_1000`, `ge_10000`, `ge_100000` | Counts of rows with at least the specified affected-target threshold; unique-diff values are 5,988, 1,213 and 233. |
+| `max_affected_targets` | Largest observed affected-target proxy for one row; 2,884,044. |
+
+The [aggregate JSON](tango-eval/hive-go-diff-targets-20260930.json) keeps the chosen `unique_diff_latest` output and validation in a compact, reviewable artifact. Every field in that artifact is accounted for here:
+
+| Field in Hive aggregate JSON | Definition / units |
+|---|---|
+| `source_table`, `data_tier` | Fully qualified source table and its uMetadata data-quality tier (`TIER_THREE`). |
+| `period_utc_datestr`, `scope` | Inclusive Hive date partitions and the queue, stack and latest-per-diff filters used. |
+| `affected_target_proxy` | Formula used to approximate conflict-relevant targets; not a measured Tango response. |
+| `presto_report_id`, `presto_run_id`, `data_central_execution_uuid` | Identifiers of the executed mean/distribution query, sufficient to retrieve its results and execution metadata. |
+| `raw_single_diff_event_rows`, `unique_diff_count` | Qualifying feature-event count and latest-per-diff count before and after deduplication. |
+| `total_affected_targets`, `avg_affected_targets_per_unique_diff` | Deduplicated sum and arithmetic mean of the affected-target proxy. |
+| `avg_changed`, `avg_added`, `avg_removed` | Deduplicated arithmetic means of each producer count, with the same units as target count per diff. |
+| `approx_p50_p90_p95_p99_p999`, `zero_target_diffs` | Approximate affected-target percentiles, and count of unique diffs with zero affected targets. |
+| `at_least_100000_target_diffs`, `affected_target_sum_from_at_least_100000_diffs`, `avg_below_100000` | Broad-diff count and contribution, plus arithmetic mean after excluding those diffs. |
+| `broad_tail_cross_check` | Independent second Presto run with the same latest-per-diff filter; its `sql`, `presto_report_id`, `presto_run_id`, and `data_central_execution_uuid` locate that run, while `unique_diffs`, `total_affected_targets`, `broad_diffs`, `broad_affected_targets`, and `avg_below_100000` are its result columns. |
+| `alternative_unique_diff_and_base_count`, `alternative_unique_diff_and_base_avg` | Sensitivity grouping by the pair `(diff ID, base SHA)` instead of diff ID alone; count and average in targets. |
+| `null_event_timestamps`, `negative_counts` | Data-quality checks on the qualifying event rows before latest-event selection. |
+| `diffs_with_repeated_events`, `diffs_with_multiple_base_shas`, `diffs_with_varying_affected_counts` | Counts of diffs with multiple feature events, multiple base revisions, and multiple reported affected-target values. |
+| `integer_N_rounded`, `benchmark_targets` | Rounded mean `N` and its `N`, `2N` and `5N` integer benchmark target counts. |
+| `caveat` | Reminder that event counters approximate affected targets and the mean is dominated by a heavy tail. |
+
+The same [Go benchmark](../../../tool/tangograph-eval/bench.go) was run at each of the exact integer `N`, `2N`, and `5N` sizes against the previously measured full go-code target-name pool. Results are [N](tango-eval/go-code-impact-hive-n-20260930.json), [2N](tango-eval/go-code-impact-hive-2n-20260930.json), and [5N](tango-eval/go-code-impact-hive-5n-20260930.json). Each row is a **separate deterministic synthetic run**, not a Hive observation of that many simultaneous active batches. `N` is observed per **single diff**, not per multi-diff SubmitQueue batch: using `N`, `2N` or `5N` targets for **each** batch is a scenario assumption, not a measured batch-size distribution. As above, the Tango-like case models one optimized target and dependency/name metadata per affected label, not a full base graph or the potentially two-sided old/new response. Labels and capped dependency **degrees** come from the complete go-code Bazel graph, but benchmark dependency **neighbors** are sampled deterministically rather than representing its actual graph edges.
+
+| In flight `B` | Scenario (`K` targets/batch) | Matched batches | Raw 64-bit arrays | ID index + registry heap | Label index heap | Tango-like snapshots heap | Tango-like protobuf (gzip) |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | N (2,527) | 88 | 1.9 MiB | 61.2 MiB | 55.3 MiB | 262.8 MiB | 159.6 MiB (57.1 MiB) |
+| 500 | N (2,527) | 455 | 9.6 MiB | 254.4 MiB | 254.4 MiB | 1,315.1 MiB | 798.1 MiB (285.7 MiB) |
+| 1,000 | N (2,527) | 923 | 19.3 MiB | 333.9 MiB | 411.8 MiB | 2,629.9 MiB | 1,596.7 MiB (571.5 MiB) |
+| 100 | 2N (5,054) | 100 | 3.9 MiB | 105.8 MiB | 99.0 MiB | 527.1 MiB | 321.2 MiB (114.7 MiB) |
+| 500 | 2N (5,054) | 500 | 19.3 MiB | 334.0 MiB | 411.8 MiB | 2,627.5 MiB | 1,604.9 MiB (573.1 MiB) |
+| 1,000 | 2N (5,054) | 1,000 | 38.6 MiB | 561.3 MiB | 821.6 MiB | 5,257.5 MiB | 3,209.8 MiB (1,146.3 MiB) |
+| 100 | 5N (12,635) | 100 | 9.6 MiB | 255.5 MiB | 254.4 MiB | 1,250.9 MiB | 800.9 MiB (286.0 MiB) |
+| 500 | 5N (12,635) | 500 | 48.2 MiB | 593.3 MiB | 978.2 MiB | 6,252.9 MiB | 4,004.6 MiB (1,430.1 MiB) |
+| 1,000 | 5N (12,635) | 1,000 | 96.4 MiB | 693.9 MiB | 1,759.4 MiB | 12,502.1 MiB | 8,006.1 MiB (2,859.2 MiB) |
+
+| Column in the nine-case memory/wire table | Definition / units |
+|---|---|
+| In flight `B` | Number of existing synthetic batches whose impact sets must be compared against the new candidate. |
+| Scenario (`K` targets/batch) | Exact number of unique target names for each in-flight batch **and** the candidate; `N=2,527`, `2N=5,054`, `5N=12,635`. |
+| Matched batches | Number of those `B` with at least one target name in common with the candidate in this synthetic run. |
+| Raw 64-bit arrays | `B × K × 8` bytes of uncompressed, fixed-width IDs, shown in MiB (`2²⁰` bytes); **not end-to-end index wire bytes** (compression might reduce them), and excludes name registry, postings and representation overhead. |
+| ID index + registry heap | Measured resident Go heap for `[]uint64` batch sets, sparse ID→name registry and ID→batch postings, net of shared inputs. |
+| Label index heap | Measured resident Go heap for string-name batch sets and name→batch postings, net of shared inputs. |
+| Tango-like snapshots heap | Measured resident Go heap for `B` modeled optimized-target/metadata batch snapshots, net of shared inputs. |
+| Tango-like protobuf (gzip) | Total modeled uncompressed (best-speed gzip) serialized snapshot bytes across all `B` batches; it is **not** a measured Tango RPC or database transfer. |
+
+**Memory interpretation:** heap is measured live Go heap for **all `B` representations resident in one process**, minus the shared raw label pool and workload indices; it is neither a deployed controller's request heap nor a database storage bill. At `B=1,000, K=5N`, the Tango-like test process peaked near **25.8 GiB RSS** while constructing and serializing its temporary snapshots, versus **12.2 GiB live snapshot heap** after GC. ID-index heap saturates more slowly at high `K` because the sparse name registry cannot exceed the sampled 2.54-million-label pool, while repeated per-batch names continue increasing the label-index and Tango-like sizes. These synthetic uniformly scattered sets match **92.3%** of batches even at `B=1,000, K=N` and **all** batches at `K=2N` or `5N`; real changes can be more clustered or less correlated. When every batch matches, the dependency output itself costs `Ω(B)` and broad-mode conservative serialization avoids thousands of posting operations.
+
+Reusing the **illustrative** model above (5 ms/point read or write, concurrency 16, 100 MiB/s; not measured storage), the estimated admission times are:
+
+| `B` | `K` | Current batch-hydration floor | ID index, cold | ID index, warm registry | Label index | Tango-like scan, raw | Tango-like scan, gzip |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | N | 35 ms | 3.12 s | 1.62 s | 1.62 s | 1.68 s | 0.66 s |
+| 500 | N | 160 ms | 3.01 s | 1.74 s | 1.74 s | 8.39 s | 3.26 s |
+| 1,000 | N | 315 ms | 2.98 s | 1.90 s | 1.90 s | 16.78 s | 6.53 s |
+| 100 | 2N | 35 ms | 6.06 s | 3.20 s | 3.20 s | 3.29 s | 1.23 s |
+| 500 | 2N | 160 ms | 5.49 s | 3.32 s | 3.32 s | 16.43 s | 6.11 s |
+| 1,000 | 2N | 315 ms | 5.28 s | 3.48 s | 3.48 s | 32.83 s | 12.20 s |
+| 100 | 5N | 35 ms | 14.26 s | 7.94 s | 7.94 s | 8.08 s | 2.93 s |
+| 500 | 5N | 160 ms | 12.34 s | 8.06 s | 8.07 s | 40.40 s | 14.65 s |
+| 1,000 | 5N | 315 ms | 12.20 s | 8.22 s | 8.22 s | 80.76 s | 29.29 s |
+
+| Column in the nine-case latency table | Definition / units |
+|---|---|
+| `B`, `K` | Same existing-batch and per-batch target counts as the memory/wire table. |
+| Current batch-hydration floor | `ceil(B/16) × 5 ms` for existing per-key batch reads, included in **all** subsequent times. |
+| ID index, cold | Assumed registry check for every one of the `K` candidate names, conditional registration for unknown names, `K` posting reads, `K` posting writes, and measured local lookup CPU, plus hydration. |
+| ID index, warm registry | Omits name-registry I/O if canonical IDs are already known, but still does `K` posting reads and writes, plus hydration and measured CPU. |
+| Label index | `K` string-key posting reads and writes, hydration and measured local lookup CPU; no ID-name registration. |
+| Tango-like scan, raw | `B` per-batch snapshot reads, modeled raw protobuf transfer at 100 MiB/s, hydration and measured local scan CPU. |
+| Tango-like scan, gzip | Same with measured gzip/best-speed bytes, **excluding decompression CPU**. |
+
+The modeled cold-ID latency falls slightly as `B` increases at fixed `K` because more candidate labels have already been registered, avoiding conditional creates; **do not interpret that as a faster actual queue with more batches**. Every mode excludes the common Tango computation for the new diff, posting hot-key contention, compression/decompression CPU, and service/database tail latency. `5N` should generally trigger an explicit, conservative broad policy rather than 12,635 target-registration and posting reads/writes per admission.
+
+#### Benchmark result-field dictionary
+
+The following table defines **every structural field** in the JSON benchmark artifacts. Fields nested under a mode appear only where applicable; zero-valued optional fields may be omitted. `B` and `K` describe synthetic benchmark workload sizes, **not a measured SubmitQueue population**.
+
+| Field in JSON | Scope | Definition / units |
+|---|---|---|
+| `input` | top-level | Path of the successful full go-code Bazel `streamed_proto` used for label sampling; not committed because it contains internal labels. |
+| `bazel_streamed_proto_input_bytes` | top-level | Byte length of that raw query file (`2,799,274,578`). |
+| `go_code_revision`, `go_version` | top-level | Checked-out go-code commit and local Go runtime used for the benchmark. |
+| `graph_targets`, `main_repo_labels` | top-level | Parsed complete graph node count and count of `//` main-repository labels eligible for synthetic changes. |
+| `mean_label_bytes` | top-level | Arithmetic mean UTF-8 byte length of eligible target labels, **not** an in-memory string size (approximately 101). |
+| `mean_capped_dependencies`, `max_dependencies_per_target` | top-level | Mean observed dependency degree after capping each node at the stated maximum (`32`); modeled neighbors are sampled and are **not** the actual graph edges. |
+| `illustrative_latency_assumptions` | top-level | Namespace for **assumed**, not measured, backend timing inputs. |
+| `point_read_or_write_rtt_ms` | assumptions | Assumed independent per-key read or write latency in milliseconds (`5`). |
+| `max_concurrent_point_operations` | assumptions | Optimistic number of concurrent per-key storage operations (`16`). |
+| `uncompressed_transfer_mib_per_second` | assumptions | Assumed storage throughput for raw or modeled gzip payloads in MiB/s (`100`). |
+| `notes` | top-level | Workload, scope and non-production-measurement qualifications emitted by the benchmark code. |
+| `cases` | top-level | Array containing one run for each requested pair of `B` and `K`. |
+| `in_flight_batches` | case | `B`: synthetic batches already eligible for comparison. |
+| `targets_per_batch`, `candidate_targets` | case | `K` affected labels in each synthetic batch and in the incoming candidate; generated unique within each batch. |
+| `registered_64bit_index` | case/mode | Complete sorted 64-bit per-batch ID sets, an in-memory name registry and ID→batch posting lists; no real remote registry calls. |
+| `canonical_label_index` | case/mode | Complete per-batch string-name sets and label→batch postings, without a 64-bit name registry. |
+| `tango_optimized_target_scan` | case/mode | One default-field optimized target per changed name plus local ID→name metadata including dependency names; scans all stored batch snapshots. |
+| `live_heap_bytes` | each mode | Incremental live Go heap **after GC** for all `B` mode records resident in one process, excluding the shared label pool and generated workload indices. |
+| `build_milliseconds` | each mode | Local elapsed time to construct **all** `B` batches and their index/metadata, plus candidate registration where applicable; not the time for one admission. |
+| `query_microseconds`, `query_alloc_bytes` | each mode | Average resident, in-memory candidate-lookup CPU time and Go allocated bytes **per lookup**; excludes fetching the stored data. |
+| `matching_batches` | each mode | Number of synthetic batches sharing at least one candidate target name/ID; identical across the three modes within a case. |
+| `posting_reads` | each mode | Modeled point reads for a lookup: `K` target postings for either index; **`B` batch-snapshot reads** in the Tango-like scan despite the generic JSON field name. |
+| `registration_reads` | each mode | `K` modeled ID→name registry checks for the incoming candidate in the ID mode; `0` for the string and Tango-like modes. |
+| `posting_keys` | indexed modes | Distinct registered IDs or label strings with in-flight postings, excluding candidate-only names that have no posting yet. |
+| `name_registry_entries` | ID mode | Distinct label rows registered across all in-flight batches **and** candidate. Their difference from `posting_keys` estimates new candidate labels needing conditional creates. |
+| `raw_impact_bytes` | ID mode | `8 × B × K` bytes of raw per-batch ID arrays; excludes Go slice/map overhead, name registry, postings and metadata. |
+| `raw_label_bytes` | string or Tango-like modes | Sum of UTF-8 label bytes retained across per-batch string sets, or changed-target **and dependency** metadata respectively; excludes maps/slices and other fields. |
+| `modeled_protobuf_bytes`, `modeled_gzip_bytes` | Tango-like mode | Sum of per-batch default-field `GetTargetGraphResponse`-shaped protobuf sizes and gzip/best-speed sizes. These are **not** observed Tango RPC bytes or actual two-sided `GetChangedTargets` messages. |
+| `illustrative_remote_latency` | case | Namespace for the model using the input assumptions and locally measured lookup CPU; **not** backend timings or measured service SLOs. |
+| `common_batch_hydration_ms` | latency model | `ceil(B / concurrency) × RTT` for the existing controller's per-key `BatchStore.Get` hydration, included in every mode. |
+| `registered_64bit_index_ms` | latency model | Common hydration + `K` name-registry reads + conditional creates for new names + `K` posting reads + `K` posting writes + local index-lookup CPU. |
+| `registered_64bit_index_warm_registry_ms` | latency model | Same index path, but optimistically omits all name-registry I/O when candidate IDs are already available. |
+| `canonical_label_index_ms` | latency model | Common hydration + `K` label-posting reads + `K` posting writes + local lookup CPU. |
+| `tango_optimized_target_scan_ms` | latency model | Common hydration + `B` snapshot reads + modeled raw protobuf transfer at assumed throughput + local scan CPU. |
+| `tango_optimized_target_scan_gzip_ms` | latency model | Same, substituting modeled per-message gzip transfer; **excludes** gzip decompression CPU and backend compression costs. |
+
 ## Proposed SubmitQueue design
 
 1. Add `submitqueue/orchestrator/extension/conflict/tango/` implementing the **existing shared** `submitqueue/extension/conflict.Analyzer`; the implementation is service-scoped because only the orchestrator resolves it. Inject a `changeset.Resolver`, an interface for Tango's streaming client, a queue-specific VCS/base-revision resolver, and a key-oriented impact store (plus a first-class posting store for indexed mode) at construction. Route each queue in `service/submitqueue/orchestrator/server/`, not in an extension factory. Do not expand controller inputs to include changes or graphs.
@@ -200,6 +351,19 @@ go run ./tool/tangograph-eval -benchmark \
   -benchmark-batches 100,500,1000 -benchmark-targets 100,1000 \
   -benchmark-rtt-ms 5 -benchmark-concurrency 16 \
   -benchmark-transfer-mib 100
+```
+
+The Hive-derived benchmark reruns the same input at the [verified integer target counts](tango-eval/hive-go-diff-targets-20260930.json) with separate processes to limit peak memory; the largest `5N, B=1,000` Tango-like case needs substantial memory:
+
+```sh
+for k in 2527 5054 12635; do
+  GOMEMLIMIT=28GiB go run ./tool/tangograph-eval -benchmark \
+    -input /tmp/sq-go-code-full-20260928.streamed_proto \
+    -go-code-revision c5655f3f7e87f \
+    -benchmark-batches 100,500,1000 -benchmark-targets "$k" \
+    -benchmark-rtt-ms 5 -benchmark-concurrency 16 \
+    -benchmark-transfer-mib 100 > "/tmp/sq-impact-${k}.json"
+done
 ```
 
 The **earlier subtree queries**, useful for comparing local and whole-repo behavior, can still be reproduced from `~/go-code`:

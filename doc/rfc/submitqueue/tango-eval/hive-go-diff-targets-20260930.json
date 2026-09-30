@@ -1,0 +1,56 @@
+{
+  "source_table": "rawdata_user.kafka_hp_submitqueue_request_feature_event_nodedup",
+  "data_tier": "TIER_THREE",
+  "period_utc_datestr": [
+    "2026-09-01",
+    "2026-09-29"
+  ],
+  "scope": "queueid=go, stackheight=1, cardinality(diffids)=1, latest event per diff ID by ts",
+  "affected_target_proxy": "targetschanged + targetsadded + targetsremoved",
+  "presto_report_id": "mcDHURW0X",
+  "presto_run_id": "PEOkkp0n",
+  "data_central_execution_uuid": "6a86dc71-00db-4c93-a38d-b07cb221e51d",
+  "raw_single_diff_event_rows": 62957,
+  "unique_diff_count": 58876,
+  "total_affected_targets": 148766796,
+  "avg_affected_targets_per_unique_diff": 2526.781642774645,
+  "avg_changed": 2524.6626639037977,
+  "avg_added": 1.6946973299816563,
+  "avg_removed": 0.4242815408655479,
+  "approx_p50_p90_p95_p99_p999": [
+    42,
+    1047,
+    3327,
+    34815,
+    524287
+  ],
+  "zero_target_diffs": 5942,
+  "at_least_100000_target_diffs": 233,
+  "affected_target_sum_from_at_least_100000_diffs": 98355004,
+  "avg_below_100000": 859.6386951554321,
+  "broad_tail_cross_check": {
+    "sql": "hive-go-diff-tail-20260930.sql",
+    "presto_report_id": "F1fC14EDp",
+    "presto_run_id": "kMpN5D03F",
+    "data_central_execution_uuid": "216b3b36-a5b2-48c7-9463-20af6272b804",
+    "unique_diffs": 58876,
+    "total_affected_targets": 148766796,
+    "broad_diffs": 233,
+    "broad_affected_targets": 98355004,
+    "avg_below_100000": 859.6386951554321
+  },
+  "alternative_unique_diff_and_base_count": 60614,
+  "alternative_unique_diff_and_base_avg": 2656.7272082357213,
+  "null_event_timestamps": 0,
+  "negative_counts": 0,
+  "diffs_with_repeated_events": 3056,
+  "diffs_with_multiple_base_shas": 1648,
+  "diffs_with_varying_affected_counts": 1270,
+  "integer_N_rounded": 2527,
+  "benchmark_targets": {
+    "N": 2527,
+    "2N": 5054,
+    "5N": 12635
+  },
+  "caveat": "Feature-event counters are a proxy for affected targets, not actual Tango GetChangedTargets output. Heavy tail materially inflates the arithmetic mean."
+}
