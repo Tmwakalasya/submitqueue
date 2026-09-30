@@ -60,6 +60,12 @@ func run(args []string, out, errOut io.Writer) error {
 	maxMessageBytes := flags.Int("max-message-bytes", 4_250_000, "limit for each modeled Tango protobuf message")
 	impactSeeds := flags.Int("impact-seeds", 64, "number of evenly distributed source-file nodes to test for reverse-closure overlap (0 to skip)")
 	impactPrefix := flags.String("impact-source-prefix", "", "select source-file change seeds under this label prefix (default: all main-repo source files)")
+	benchmark := flags.Bool("benchmark", false, "run synthetic per-batch impact benchmarks on labels sampled from the Bazel input")
+	benchmarkTargets := flags.String("benchmark-targets", "100,1000", "comma-separated affected targets per synthetic batch")
+	benchmarkBatches := flags.String("benchmark-batches", "100,500,1000", "comma-separated in-flight batch counts")
+	benchmarkRTT := flags.Float64("benchmark-rtt-ms", 5, "illustrative per-key storage read/write RTT in milliseconds")
+	benchmarkConcurrency := flags.Int("benchmark-concurrency", 16, "illustrative concurrent per-key storage operations")
+	benchmarkTransfer := flags.Float64("benchmark-transfer-mib", 100, "illustrative uncompressed storage throughput in MiB/s")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -94,6 +100,22 @@ func run(args []string, out, errOut io.Writer) error {
 	graph, err := readStreamedProto(counter, *scope)
 	if err != nil {
 		return err
+	}
+	if *benchmark {
+		measured, err := benchmarkBatchImpacts(graph, *benchmarkBatches, *benchmarkTargets, benchAssumptions{
+			RTTMilliseconds:      *benchmarkRTT,
+			Concurrency:          *benchmarkConcurrency,
+			TransferMiBPerSecond: *benchmarkTransfer,
+		})
+		if err != nil {
+			return err
+		}
+		measured.Input = *input
+		measured.InputBytes = counter.bytes
+		measured.GoCodeRevision = *revision
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(measured)
 	}
 	measured, err := measureGraph(graph, baseline.HeapAlloc, *maxMessageBytes, *impactSeeds, *impactPrefix)
 	if err != nil {

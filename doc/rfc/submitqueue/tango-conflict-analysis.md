@@ -119,6 +119,40 @@ The index's **negative result is trustworthy only if every eligible batch is ind
 
 Hot targets may produce a posting list containing nearly every batch and a high-contention row. Return size then has a fundamental `Ω(B)` lower bound because the resulting dependency list itself contains `B` IDs; reading a bounded batch list or conservatively marking all as dependent is appropriate. Partition/compact posting lists only if measured hot-key latency requires it, without letting a partial partition look complete. Terminal postings can be removed *after* the authoritative batch state is terminal, using the durable full signature to issue idempotent per-key removals: a crash merely leaves stale positives, which state verification filters until a reconciler finishes cleanup. Epoch expiry is safe only after no active batch depends on that epoch. A candidate whose impact set would require millions of reads/writes should explicitly take the conservative **depends-on-all** path, not silently cap the set. For a sparse candidate, avoiding the controller's up-front [`ListByStates`](../../../submitqueue/orchestrator/core/batch/list.go) call requires a separate, explicit analyzer/controller contract change so the index supplies candidate IDs and only matches are hydrated; the current `Analyze(ctx, batch, inFlight)` contract still forces that initial `O(B)` enumeration.
 
+### In-flight benchmark for 100, 500, and 1000 batches
+
+The [benchmark code](../../../tool/tangograph-eval/bench.go) sampled **actual canonical main-repo labels** from the successful complete go-code Bazel query (`2,538,730` eligible labels, mean length `101.0` bytes). It generated deterministic synthetic batches with either `K=100` or `K=1,000` unique affected labels each, sampled uniformly from that pool, and used the same candidate and matches for all three representations. Dependency degree came from the query (capped at 32; resulting mean `4.97`). These are **not observed PR diffs or measured Tango RPC responses**: real changes cluster in the graph and may have different overlap and broad-target rates. The [measured results and modeled latency](tango-eval/go-code-impact-benchmark-20260930.json) and a [repeat run](tango-eval/go-code-impact-benchmark-20260930-repeat.json) contain aggregate data only, no internal target names.
+
+The three benchmark representations are (1) sorted `[]uint64` per batch plus an in-memory stand-in for the **sparse ID→label registry and durable ID→batch postings**, including collision-checking SHA-256 ID registration; (2) complete sorted label-string sets plus **label-string→batch postings**, with no numeric registration; (3) one default-field `OptimizedTarget` per affected name plus per-response `Metadata.TargetIDMapping` containing changed targets **and direct dependencies**, scanned batch by batch. The Tango-like representation uses response-local `int32` IDs, omits hashes/tags/attributes according to the default `OutputConfig`, and models `GetTargetGraphResponse` framing; a real `GetChangedTargets` result can contain **both old and new targets**, making these Tango-like heap and wire numbers a lower-fidelity, potentially optimistic proxy. String payloads in the simulated per-batch metadata are separately allocated; indexed modes retain complete per-batch sets as rebuild sources.
+
+| In flight `B` | Targets/batch `K` | Matches | ID index + registry live heap | Label-string index live heap | Tango-like snapshots live heap | Tango-like protobuf (gzip) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 100 | 0 | 2.2 MiB | 2.0 MiB | 10.0 MiB | 6.4 MiB (2.3 MiB) |
+| 100 | 1,000 | 40 | 20.1 MiB | 18.7 MiB | 94.3 MiB | 63.1 MiB (22.6 MiB) |
+| 500 | 100 | 2 | 10.1 MiB | 9.4 MiB | 49.6 MiB | 31.6 MiB (11.5 MiB) |
+| 500 | 1,000 | 161 | 100.1 MiB | 96.1 MiB | 472.2 MiB | 316.6 MiB (113.2 MiB) |
+| 1,000 | 100 | 4 | 20.1 MiB | 18.8 MiB | 99.0 MiB | 63.0 MiB (23.0 MiB) |
+| 1,000 | 1,000 | 317 | 166.9 MiB | 173.8 MiB | 944.4 MiB | 633.3 MiB (226.5 MiB) |
+
+These **live Go heap** values are after GC, subtract the shared input-label pool and workload indices, and include the ID registry or label index as appropriate; the raw per-batch ID arrays alone are only `8 × B × K` bytes. At `B=1,000, K=1,000` that is **8.0 MB raw**, yet the ID representation uses **166.9 MiB** of Go heap because the sparse registry holds ~827,000 distinct label rows and postings use Go maps/slices. The label-string index is **173.8 MiB**, nearly the same despite labels averaging 101 bytes: **the inverted index changes the asymptotic lookup cost; merely choosing 64-bit IDs does not eliminate registry or index overhead**. The full Tango-like snapshots are much larger because per-batch metadata repeats target and dependency names. Storing a **complete 2.97-million-target graph per batch** would instead imply approximately **37/185/370 GiB** of default graph protobuf and **110/550/1,099 GiB** of modeled live ID-graph Go heap for 100/500/1,000 batches; that is arithmetic from the earlier full-graph measurement, **not an allocated benchmark case**.
+
+**These heap totals are not per-controller RSS requirements.** The benchmark deliberately keeps *all* `B` synthetic impact records, posting lists and ID registry (or all Tango-like snapshots) in one Go process to compare resident representations; a deployed index and registry can live in persistent storage. A stateless indexed query only needs its `O(K)` candidate IDs, posting results, and `O(matches)` IDs in request memory, **plus** the existing controller's `O(B)` hydrated `Batch` values until that boundary changes. A Tango-like scan can also stream **one** stored snapshot at a time to bound request heap, but still performs `B` reads and transfers the table's aggregate bytes. Go maps, MySQL rows, and an object-store serialization have different overhead: no table entry is a measured persistent-storage size. The entire benchmark process reached roughly **3.62 GiB RSS** while parsing the 2.8 GB source graph and iterating the representations; its process peak is **not** one scenario's live impact-set heap.
+
+Local **in-process lookup CPU** is much smaller than remote I/O: for `B=1,000, K=1,000`, recorded runs found roughly `0.04–0.05 ms` for 64-bit postings, `0.12–0.15 ms` for string postings, and `0.12–0.15 s` to scan all Tango-like snapshots. For `K=100`, 64-bit postings were roughly `1–2 µs` and strings `2–4 µs`, while the Tango-like scan rose from under 1 ms at `B=100` to about 18 ms at `B=1,000`. These are local Go measurements with resident in-memory structures, **not database or network timings**. Building the complete `B=1,000, K=1,000` local ID index and registering its ~827,000 distinct names took 1.58 seconds in aggregate, versus 1.28 seconds for a string index and 3.81 seconds to materialize all Tango-like snapshots; these are one-time *all-batch* construction timings without remote storage. Separate case build times are in the JSON artifact.
+
+The following is a **latency model, not a benchmark of any storage backend**: assume independent primary-key reads/writes each take **5 ms**, at most **16** run concurrently, and Tango-like stored protobuf transfers at **100 MiB/s**. All modes include the current `ListByStates` hydration floor of `ceil(B/16) × 5 ms`; ID index cold admission additionally models `K` registry reads, conditional creates for unseen labels, `K` posting reads and `K` posting writes. The warm-ID column omits registry operations if IDs are already available; the label index models `K` reads and `K` writes. The Tango-like scan models `B` snapshot reads and the measured protobuf payload transfer (gzip column substitutes modeled compressed bytes but **excludes decompression CPU**). The model excludes the **common new-batch Tango computation**, candidate registration/serialization CPU, state transitions, connection-pool limits, hot-key contention, transaction retries, and storage protocol overhead.
+
+| `B` | `K` | Common batch hydration | ID index, cold | ID index, warm | Label index | Tango-like scan, raw | Tango-like scan, gzip |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 100 | 35 ms | 175 ms | 105 ms | 105 ms | 134 ms | 94 ms |
+| 100 | 1,000 | 35 ms | 1,280 ms | 665 ms | 665 ms | 712 ms | 306 ms |
+| 500 | 100 | 160 ms | 300 ms | 230 ms | 230 ms | 645 ms | 445 ms |
+| 500 | 1,000 | 160 ms | 1,365 ms | 790 ms | 790 ms | 3,550 ms | 1,516 ms |
+| 1,000 | 100 | 315 ms | 450 ms | 385 ms | 385 ms | 1,278 ms | 878 ms |
+| 1,000 | 1,000 | 315 ms | 1,475 ms | 945 ms | 945 ms | 7,086 ms | 3,018 ms |
+
+**Decision implication:** retain the ID-based inverted index only if small `K`, hot-key fan-out, and backend point-read/write latency measured on *real* queue changes justify it. At `K≈B`, 64-bit registration and per-target posting writes can dominate admission even though the in-process lookup is fast; a direct canonical-label posting key avoids the registry phase and can have similar live heap. A Tango-like stored snapshot with compression can also be competitive for **small `B` and large `K`** under the assumed network model, but its memory/wire cost grows with every in-flight batch and a real two-sided changed-target payload may be larger. Broad changes still need an explicit fail-closed policy; do not infer an SLO or choose a static threshold from synthetic uniformly sampled labels.
+
 ## Proposed SubmitQueue design
 
 1. Add `submitqueue/orchestrator/extension/conflict/tango/` implementing the **existing shared** `submitqueue/extension/conflict.Analyzer`; the implementation is service-scoped because only the orchestrator resolves it. Inject a `changeset.Resolver`, an interface for Tango's streaming client, a queue-specific VCS/base-revision resolver, and a key-oriented impact store (plus a first-class posting store for indexed mode) at construction. Route each queue in `service/submitqueue/orchestrator/server/`, not in an extension factory. Do not expand controller inputs to include changes or graphs.
@@ -155,6 +189,17 @@ go run ./tool/tangograph-eval \
   -go-code-revision c5655f3f7e87f \
   -tango-revision 50b3695a9909f19b78a3b1b35c095c9a8331d9db
 go test ./tool/tangograph-eval
+```
+
+Run the synthetic in-flight benchmark against the same successful full-graph input. The local Go CPU/heap measurements and illustrative remote model are emitted together as JSON; the modeled RTT, operation concurrency, and transfer bandwidth are configurable without requerying Bazel:
+
+```sh
+go run ./tool/tangograph-eval -benchmark \
+  -input /tmp/sq-go-code-full-20260928.streamed_proto \
+  -go-code-revision c5655f3f7e87f \
+  -benchmark-batches 100,500,1000 -benchmark-targets 100,1000 \
+  -benchmark-rtt-ms 5 -benchmark-concurrency 16 \
+  -benchmark-transfer-mib 100
 ```
 
 The **earlier subtree queries**, useful for comparing local and whole-repo behavior, can still be reproduced from `~/go-code`:
