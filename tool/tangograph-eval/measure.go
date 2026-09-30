@@ -342,30 +342,37 @@ func (w *wireMeasurement) addMessage(data []byte) error {
 
 func measureProtoStream(graph compactGraph, mode payloadMode, maxMessageBytes int) (wireMeasurement, error) {
 	var measured wireMeasurement
+	if err := streamProtoMessages(graph, mode, maxMessageBytes, measured.addMessage); err != nil {
+		return wireMeasurement{}, err
+	}
+	return measured, nil
+}
+
+func streamProtoMessages(graph compactGraph, mode payloadMode, maxMessageBytes int, emit func([]byte) error) error {
 	var targets []byte
 	sendTargets := func() error {
 		response := appendBytesField(nil, 1, targets)
 		targets = nil
-		return measured.addMessage(response)
+		return emit(response)
 	}
 	for _, target := range graph.targets {
 		encoded := encodeOptimizedTarget(target, mode)
 		entry := appendBytesField(nil, 1, encoded)
 		if len(targets) != 0 && len(targets)+len(entry)+10 > maxMessageBytes {
 			if err := sendTargets(); err != nil {
-				return wireMeasurement{}, err
+				return err
 			}
 		}
 		targets = append(targets, entry...)
 	}
 	if err := sendTargets(); err != nil {
-		return wireMeasurement{}, err
+		return err
 	}
 	var meta []byte
 	sendMetadata := func() error {
 		response := appendBytesField(nil, 2, meta)
 		meta = nil
-		return measured.addMessage(response)
+		return emit(response)
 	}
 	addMapping := func(field protowire.Number, mapping map[int32]string) error {
 		for id := int32(1); id <= int32(len(mapping)); id++ {
@@ -382,11 +389,11 @@ func measureProtoStream(graph compactGraph, mode payloadMode, maxMessageBytes in
 		return nil
 	}
 	if err := addMapping(1, graph.names); err != nil {
-		return wireMeasurement{}, err
+		return err
 	}
 	if mode != namesOnlyPayload {
 		if err := addMapping(2, graph.ruleTypes); err != nil {
-			return wireMeasurement{}, err
+			return err
 		}
 	}
 	if mode == allFieldsPayload {
@@ -395,14 +402,14 @@ func measureProtoStream(graph compactGraph, mode payloadMode, maxMessageBytes in
 			items map[int32]string
 		}{{3, graph.tags}, {4, graph.attrNames}, {5, graph.attrValues}} {
 			if err := addMapping(mapping.field, mapping.items); err != nil {
-				return wireMeasurement{}, err
+				return err
 			}
 		}
 	}
 	if err := sendMetadata(); err != nil {
-		return wireMeasurement{}, err
+		return err
 	}
-	return measured, nil
+	return nil
 }
 
 func encodeOptimizedTarget(target optimizedTarget, mode payloadMode) []byte {

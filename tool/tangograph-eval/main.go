@@ -62,6 +62,7 @@ func run(args []string, out, errOut io.Writer) error {
 	impactPrefix := flags.String("impact-source-prefix", "", "select source-file change seeds under this label prefix (default: all main-repo source files)")
 	benchmark := flags.Bool("benchmark", false, "run synthetic per-batch impact benchmarks on labels sampled from the Bazel input")
 	benchmarkColdScan := flags.Bool("benchmark-cold-scan", false, "measure one-candidate stateless full scans of stored ID and name signatures")
+	benchmarkLoad := flags.Bool("benchmark-load", false, "measure serialized bytes, decoded heap, deserialization, and one-candidate intersection separately")
 	benchmarkTargets := flags.String("benchmark-targets", "100,1000", "comma-separated affected targets per synthetic batch")
 	benchmarkBatches := flags.String("benchmark-batches", "100,500,1000", "comma-separated in-flight batch counts")
 	benchmarkRTT := flags.Float64("benchmark-rtt-ms", 5, "illustrative per-key storage read/write RTT in milliseconds")
@@ -73,8 +74,8 @@ func run(args []string, out, errOut io.Writer) error {
 	if *maxMessageBytes < 128 {
 		return fmt.Errorf("-max-message-bytes must be at least 128")
 	}
-	if *benchmark && *benchmarkColdScan {
-		return fmt.Errorf("-benchmark and -benchmark-cold-scan cannot be used together")
+	if boolCount(*benchmark, *benchmarkColdScan, *benchmarkLoad) > 1 {
+		return fmt.Errorf("choose only one of -benchmark, -benchmark-cold-scan, or -benchmark-load")
 	}
 	if *impactSeeds < 0 || *impactSeeds > 256 {
 		return fmt.Errorf("-impact-seeds must be between 0 and 256")
@@ -137,6 +138,18 @@ func run(args []string, out, errOut io.Writer) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(measured)
 	}
+	if *benchmarkLoad {
+		measured, err := benchmarkLoadAndCheck(graph, *benchmarkBatches, *benchmarkTargets)
+		if err != nil {
+			return err
+		}
+		measured.Input = *input
+		measured.InputBytes = counter.bytes
+		measured.GoCodeRevision = *revision
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(measured)
+	}
 	measured, err := measureGraph(graph, baseline.HeapAlloc, *maxMessageBytes, *impactSeeds, *impactPrefix)
 	if err != nil {
 		return err
@@ -161,6 +174,16 @@ func run(args []string, out, errOut io.Writer) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
+}
+
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 type countingReader struct {

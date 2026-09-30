@@ -414,33 +414,9 @@ func benchmarkTangoLike(labels []benchLabel, workload benchWorkload) (benchMode,
 	}
 	var rawLabelBytes uint64
 	for batchIndex, indices := range workload.batches {
-		targets := make([]optimizedTarget, 0, len(indices))
-		names := make(map[int32]string, len(indices)*3)
-		ids := make(map[uint32]int32, len(indices)*3)
-		for j, index := range indices {
-			id := int32(j + 1)
-			ids[index] = id
-			names[id] = strings.Clone(labels[index].name)
-			rawLabelBytes += uint64(len(labels[index].name))
-		}
-		nextID := int32(len(indices) + 1)
-		for _, index := range indices {
-			target := optimizedTarget{id: ids[index], ruleType: 1}
-			for j := range int(labels[index].degree) {
-				depIndex := uint32(splitMix64(uint64(index)<<32|uint64(j)) % uint64(len(labels)))
-				depID, exists := ids[depIndex]
-				if !exists {
-					depID = nextID
-					nextID++
-					ids[depIndex] = depID
-					names[depID] = strings.Clone(labels[depIndex].name)
-					rawLabelBytes += uint64(len(labels[depIndex].name))
-				}
-				target.directDependencies = append(target.directDependencies, depID)
-			}
-			targets = append(targets, target)
-		}
-		data.batches[batchIndex] = tangoModeBatch{targets: targets, names: names}
+		var batchLabelBytes uint64
+		data.batches[batchIndex], batchLabelBytes = buildSyntheticTangoBatch(labels, indices)
+		rawLabelBytes += batchLabelBytes
 	}
 	result := benchMode{
 		BuildMilliseconds: float64(time.Since(start).Microseconds()) / 1000,
@@ -478,4 +454,35 @@ func benchmarkTangoLike(labels []benchLabel, workload benchWorkload) (benchMode,
 	runtime.KeepAlive(labels)
 	runtime.KeepAlive(workload)
 	return result, nil
+}
+
+func buildSyntheticTangoBatch(labels []benchLabel, indices []uint32) (tangoModeBatch, uint64) {
+	targets := make([]optimizedTarget, 0, len(indices))
+	names := make(map[int32]string, len(indices)*3)
+	ids := make(map[uint32]int32, len(indices)*3)
+	var rawLabelBytes uint64
+	for j, index := range indices {
+		id := int32(j + 1)
+		ids[index] = id
+		names[id] = strings.Clone(labels[index].name)
+		rawLabelBytes += uint64(len(labels[index].name))
+	}
+	nextID := int32(len(indices) + 1)
+	for _, index := range indices {
+		target := optimizedTarget{id: ids[index], ruleType: 1}
+		for j := range int(labels[index].degree) {
+			depIndex := uint32(splitMix64(uint64(index)<<32|uint64(j)) % uint64(len(labels)))
+			depID, exists := ids[depIndex]
+			if !exists {
+				depID = nextID
+				nextID++
+				ids[depIndex] = depID
+				names[depID] = strings.Clone(labels[depIndex].name)
+				rawLabelBytes += uint64(len(labels[depIndex].name))
+			}
+			target.directDependencies = append(target.directDependencies, depID)
+		}
+		targets = append(targets, target)
+	}
+	return tangoModeBatch{targets: targets, names: names}, rawLabelBytes
 }
