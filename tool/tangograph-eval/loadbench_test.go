@@ -15,6 +15,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,8 +33,8 @@ func TestSignatureCodecsRoundTrip(t *testing.T) {
 		require.Error(t, err)
 	})
 	t.Run("sorted full names", func(t *testing.T) {
-		labels := []benchLabel{{name: "//app:one"}, {name: "//app:two"}, {name: "//other:three"}}
-		encoded := encodeNameSignature([]uint32{2, 0, 1}, labels)
+		names := []string{"//app:one", "//app:two", "//other:three"}
+		encoded := encodeNameSignature([]uint32{2, 0, 1}, names)
 		got, err := decodeNameSignature(encoded, 3)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"//app:one", "//app:two", "//other:three"}, got)
@@ -74,56 +75,132 @@ func TestTangoResponseFrameRoundTrip(t *testing.T) {
 	require.Error(t, decodeGzipTangoFrame([]byte{0xff}, &compressed))
 }
 
-func TestBenchmarkLoadAndCheck(t *testing.T) {
-	graph := queryGraph{scanned: 25}
-	for i := range 25 {
+func testChainGraph(n int) queryGraph {
+	graph := queryGraph{scanned: uint64(n)}
+	graph.targets = append(graph.targets, queryTarget{name: "//app:root.go", ruleType: "source file"})
+	for i := 1; i < n; i++ {
 		graph.targets = append(graph.targets, queryTarget{
-			name: "//app:target" + string(rune('a'+i)),
-			deps: []string{"//app:source"},
+			name:     fmt.Sprintf("//app:t%02d", i),
+			ruleType: "go_library",
+			deps:     []string{graph.targets[i-1].name},
 		})
 	}
-	result, err := benchmarkLoadAndCheck(graph, "2,5", "3")
+	return graph
+}
+
+func TestBenchmarkLoadAndCheck(t *testing.T) {
+	histogram := targetHistogram{values: []int{0, 3, 7}, cumulative: []uint64{1, 3, 4}}
+	result, err := benchmarkLoadAndCheck(testChainGraph(25), histogram, "2,5", 4, defaultBlobStoreProfiles, 4)
 	require.NoError(t, err)
 	require.Len(t, result.Cases, 2)
 	for _, entry := range result.Cases {
-		assert.Equal(t, uint64(entry.InFlight*entry.TargetsPerBatch*8), entry.SortedIDs.BlobBytes)
-		assert.Greater(t, entry.SortedNames.BlobBytes, entry.SortedIDs.BlobBytes)
+		assert.Equal(t, entry.TotalTargets*8, entry.SortedIDs.BlobBytes)
+		assert.GreaterOrEqual(t, entry.SortedNames.BlobBytes, entry.SortedIDs.BlobBytes)
 		assert.Positive(t, entry.TangoSnapshot.RawBlobBytes)
-		assert.Positive(t, entry.TangoSnapshot.GzipBlobBytes)
 		assert.Positive(t, entry.NameRegistryBytes)
-		assert.Positive(t, entry.SortedIDs.DecodedHeapBytes)
-		assert.Positive(t, entry.SortedNames.DecodedHeapBytes)
-		assert.Positive(t, entry.TangoSnapshot.DecodedHeapBytes)
 		assert.Equal(t, entry.SortedIDs.MatchingBatches, entry.SortedNames.MatchingBatches)
 		assert.Equal(t, entry.SortedIDs.MatchingBatches, entry.TangoSnapshot.MatchingBatches)
+		assert.Equal(t, 4, entry.CandidateTargets)
 	}
+	assert.NotEmpty(t, result.Scale.Points)
+	assert.NotEmpty(t, result.Scale.Crossovers)
 }
 
 func TestMinimalIDRegistryBytesDeduplicatesBatchAndCandidateLabels(t *testing.T) {
-	labels := []benchLabel{{name: "//a:one"}, {name: "//b:two"}}
+	names := []string{"//a:one", "//b:two"}
 	workload := benchWorkload{
 		batches:   [][]uint32{{0, 1}, {0}},
 		candidate: []uint32{0, 1},
 	}
-	count, bytes := minimalIDRegistryBytes(labels, workload)
+	count, bytes := minimalIDRegistryBytes(names, workload)
 	assert.Equal(t, 2, count)
 	assert.Equal(t, uint64(2*(8+1+len("//a:one"))), bytes)
 }
 
 func TestBenchmarkLoadAndCheckRejectsInvalidWorkload(t *testing.T) {
-	graph := queryGraph{targets: []queryTarget{{name: "//app:one"}}, scanned: 1}
+	histogram := targetHistogram{values: []int{1}, cumulative: []uint64{1}}
 	for _, tt := range []struct {
-		name    string
-		batches string
-		targets string
+		name      string
+		batches   string
+		candidate int
 	}{
-		{name: "invalid batches", batches: "0", targets: "1"},
-		{name: "invalid target count", batches: "1", targets: "0"},
-		{name: "too many targets", batches: "1", targets: "2"},
+		{name: "invalid batches", batches: "0", candidate: 1},
+		{name: "invalid candidate", batches: "1", candidate: 0},
+		{name: "candidate larger than graph", batches: "1", candidate: 30},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := benchmarkLoadAndCheck(graph, tt.batches, tt.targets)
+			_, err := benchmarkLoadAndCheck(testChainGraph(25), histogram, tt.batches, tt.candidate, defaultBlobStoreProfiles, 4)
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestParseBenchmarkCounts(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		input string
+		want  []int
+		valid bool
+	}{
+		{name: "two counts", input: "100, 500", want: []int{100, 500}, valid: true},
+		{name: "zero", input: "100,0"},
+		{name: "non-numeric", input: "one"},
+		{name: "empty", input: ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			counts, err := parseBenchmarkCounts(tt.input)
+			if tt.valid {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, counts)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestRegisteredTargetIDMatchesName(t *testing.T) {
+	names := make(map[uint64]string)
+	one := registerTargetID("//app:one", names)
+	other := registerTargetID("//app:other", names)
+	assert.NotZero(t, one)
+	assert.NotEqual(t, one, other)
+	assert.Equal(t, one, registerTargetID("//app:one", names))
+	assert.Equal(t, "//app:one", names[one])
+	assert.Len(t, names, 2)
+}
+
+func TestUnsignedVarintBytes(t *testing.T) {
+	for _, tt := range []struct {
+		value uint64
+		want  int
+	}{
+		{value: 0, want: 1},
+		{value: 127, want: 1},
+		{value: 128, want: 2},
+		{value: 16384, want: 3},
+	} {
+		assert.Equal(t, tt.want, unsignedVarintBytes(tt.value))
+	}
+}
+
+func TestCountIntersectingSortedSignatures(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		batches   [][]uint64
+		candidate []uint64
+		want      int
+	}{
+		{name: "overlap", batches: [][]uint64{{1, 3}, {2, 4}, {3, 5}}, candidate: []uint64{3, 7}, want: 2},
+		{name: "disjoint", batches: [][]uint64{{1, 3}, {2, 4}}, candidate: []uint64{5, 7}},
+		{name: "empty", batches: [][]uint64{{}, {1}}, candidate: []uint64{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, countIntersectingSortedSignatures(tt.batches, tt.candidate))
+		})
+	}
+	assert.Equal(t, 1, countIntersectingSortedSignatures(
+		[][]string{{"//app:a"}, {"//app:b"}},
+		[]string{"//app:b"},
+	))
 }

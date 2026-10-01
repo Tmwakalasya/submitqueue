@@ -59,16 +59,16 @@ func decodeIDSignature(blob []byte) ([]uint64, error) {
 	return ids, nil
 }
 
-func encodeNameSignature(indices []uint32, labels []benchLabel) []byte {
-	names := make([]string, len(indices))
+func encodeNameSignature(indices []uint32, names []string) []byte {
+	sorted := make([]string, len(indices))
 	size := 0
 	for i, index := range indices {
-		names[i] = labels[index].name
-		size += len(names[i]) + unsignedVarintBytes(uint64(len(names[i])))
+		sorted[i] = names[index]
+		size += len(sorted[i]) + unsignedVarintBytes(uint64(len(sorted[i])))
 	}
-	slices.Sort(names)
+	slices.Sort(sorted)
 	blob := make([]byte, 0, size)
-	for _, name := range names {
+	for _, name := range sorted {
 		blob = binary.AppendUvarint(blob, uint64(len(name)))
 		blob = append(blob, name...)
 	}

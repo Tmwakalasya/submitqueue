@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// tangograph-eval estimates the size of Tango's graph responses from a Bazel
-// streamed_proto query, without running Tango or calculating target hashes.
+// tangograph-eval measures Tango-backed conflict-analysis designs on a Bazel
+// streamed_proto query of a real repository, without running Tango or calculating
+// target hashes: graph footprint (default), per-batch signature load and check costs
+// against a request histogram (-benchmark-load), and whether signatures computed once
+// against an advancing base can miss conflicts (-simulate-base-drift).
 package main
 
 import (
@@ -60,22 +63,37 @@ func run(args []string, out, errOut io.Writer) error {
 	maxMessageBytes := flags.Int("max-message-bytes", 4_250_000, "limit for each modeled Tango protobuf message")
 	impactSeeds := flags.Int("impact-seeds", 64, "number of evenly distributed source-file nodes to test for reverse-closure overlap (0 to skip)")
 	impactPrefix := flags.String("impact-source-prefix", "", "select source-file change seeds under this label prefix (default: all main-repo source files)")
-	benchmark := flags.Bool("benchmark", false, "run synthetic per-batch impact benchmarks on labels sampled from the Bazel input")
-	benchmarkColdScan := flags.Bool("benchmark-cold-scan", false, "measure one-candidate stateless full scans of stored ID and name signatures")
 	benchmarkLoad := flags.Bool("benchmark-load", false, "measure serialized bytes, decoded heap, deserialization, and one-candidate intersection separately")
-	benchmarkTargets := flags.String("benchmark-targets", "100,1000", "comma-separated affected targets per synthetic batch")
 	benchmarkBatches := flags.String("benchmark-batches", "100,500,1000", "comma-separated in-flight batch counts")
-	benchmarkRTT := flags.Float64("benchmark-rtt-ms", 5, "illustrative per-key storage read/write RTT in milliseconds")
-	benchmarkConcurrency := flags.Int("benchmark-concurrency", 16, "illustrative concurrent per-key storage operations")
-	benchmarkTransfer := flags.Float64("benchmark-transfer-mib", 100, "illustrative uncompressed storage throughput in MiB/s")
+	targetHistogramPath := flags.String("target-histogram", "", "CSV of affected_targets,requests; each batch's target count is drawn from it")
+	candidateTargets := flags.Int("candidate-targets", 2527, "affected targets in the incoming candidate batch")
+	rescale := flags.String("rescale", "", "recompute the scale model of an existing -benchmark-load JSON report with -target-histogram and exit")
+	simulateDrift := flags.Int("simulate-base-drift", 0, "run this many random trials of the base-drift conflict simulation and exit")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *maxMessageBytes < 128 {
 		return fmt.Errorf("-max-message-bytes must be at least 128")
 	}
-	if boolCount(*benchmark, *benchmarkColdScan, *benchmarkLoad) > 1 {
-		return fmt.Errorf("choose only one of -benchmark, -benchmark-cold-scan, or -benchmark-load")
+	if *simulateDrift > 0 {
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(simulateBaseDrift(*simulateDrift, 40, 1))
+	}
+	var histogram targetHistogram
+	if *benchmarkLoad || *rescale != "" {
+		if *targetHistogramPath == "" {
+			return fmt.Errorf("-benchmark-load and -rescale require -target-histogram")
+		}
+		f, err := os.Open(*targetHistogramPath)
+		if err != nil {
+			return err
+		}
+		histogram, err = readTargetHistogram(f)
+		f.Close()
+		if err != nil {
+			return err
+		}
 	}
 	if *impactSeeds < 0 || *impactSeeds > 256 {
 		return fmt.Errorf("-impact-seeds must be between 0 and 256")
@@ -88,6 +106,20 @@ func run(args []string, out, errOut io.Writer) error {
 	}
 	if (*sampledFiles != 0 || *totalFiles != 0) && *scope == "" {
 		return fmt.Errorf("a linear projection requires -scope")
+	}
+	if *rescale != "" {
+		data, err := os.ReadFile(*rescale)
+		if err != nil {
+			return err
+		}
+		var measured loadBenchReport
+		if err := json.Unmarshal(data, &measured); err != nil {
+			return err
+		}
+		measured.Scale = modelScale(measured.Cases, histogram, defaultBlobStoreProfiles, 400)
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(measured)
 	}
 	source := io.Reader(os.Stdin)
 	if *input != "-" {
@@ -106,40 +138,8 @@ func run(args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if *benchmark {
-		measured, err := benchmarkBatchImpacts(graph, *benchmarkBatches, *benchmarkTargets, benchAssumptions{
-			RTTMilliseconds:      *benchmarkRTT,
-			Concurrency:          *benchmarkConcurrency,
-			TransferMiBPerSecond: *benchmarkTransfer,
-		})
-		if err != nil {
-			return err
-		}
-		measured.Input = *input
-		measured.InputBytes = counter.bytes
-		measured.GoCodeRevision = *revision
-		encoder := json.NewEncoder(out)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(measured)
-	}
-	if *benchmarkColdScan {
-		measured, err := benchmarkColdStatelessScans(graph, *benchmarkBatches, *benchmarkTargets, benchAssumptions{
-			RTTMilliseconds:      *benchmarkRTT,
-			Concurrency:          *benchmarkConcurrency,
-			TransferMiBPerSecond: *benchmarkTransfer,
-		})
-		if err != nil {
-			return err
-		}
-		measured.Input = *input
-		measured.InputBytes = counter.bytes
-		measured.GoCodeRevision = *revision
-		encoder := json.NewEncoder(out)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(measured)
-	}
 	if *benchmarkLoad {
-		measured, err := benchmarkLoadAndCheck(graph, *benchmarkBatches, *benchmarkTargets)
+		measured, err := benchmarkLoadAndCheck(graph, histogram, *benchmarkBatches, *candidateTargets, defaultBlobStoreProfiles, 400)
 		if err != nil {
 			return err
 		}
@@ -174,16 +174,6 @@ func run(args []string, out, errOut io.Writer) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
-}
-
-func boolCount(values ...bool) int {
-	count := 0
-	for _, value := range values {
-		if value {
-			count++
-		}
-	}
-	return count
 }
 
 type countingReader struct {

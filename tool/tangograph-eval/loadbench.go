@@ -15,19 +15,23 @@
 package main
 
 import (
+	"cmp"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type loadBenchMode struct {
 	BlobBytes               uint64  `json:"batch_blob_bytes"`
+	MaxBlobBytes            uint64  `json:"max_single_batch_blob_bytes"`
 	DecodedHeapBytes        uint64  `json:"decoded_go_heap_bytes"`
 	DeserializeMilliseconds float64 `json:"deserialize_milliseconds"`
 	CheckMicroseconds       float64 `json:"check_microseconds"`
-	CheckAllocBytes         uint64  `json:"check_alloc_bytes"`
 	MatchingBatches         int     `json:"matching_batches"`
 }
 
@@ -38,13 +42,14 @@ type loadBenchTango struct {
 	RawDeserializeMs  float64 `json:"raw_deserialize_milliseconds"`
 	GzipDeserializeMs float64 `json:"gzip_deserialize_milliseconds"`
 	CheckMicroseconds float64 `json:"check_microseconds"`
-	CheckAllocBytes   uint64  `json:"check_alloc_bytes"`
 	MatchingBatches   int     `json:"matching_batches"`
 }
 
 type loadBenchCase struct {
 	InFlight            int            `json:"in_flight_batches"`
-	TargetsPerBatch     int            `json:"targets_per_batch"`
+	TotalTargets        uint64         `json:"total_batch_targets"`
+	MedianBatchTargets  int            `json:"median_batch_targets"`
+	MaxBatchTargets     int            `json:"max_batch_targets"`
 	CandidateTargets    int            `json:"candidate_targets"`
 	NameRegistryEntries int            `json:"id_registry_entries"`
 	NameRegistryBytes   uint64         `json:"id_registry_minimal_bytes"`
@@ -54,103 +59,109 @@ type loadBenchCase struct {
 }
 
 type loadBenchReport struct {
-	Input          string          `json:"input"`
-	InputBytes     uint64          `json:"bazel_streamed_proto_input_bytes"`
-	GoCodeRevision string          `json:"go_code_revision,omitempty"`
-	GoVersion      string          `json:"go_version"`
-	GraphTargets   uint64          `json:"graph_targets"`
-	MainLabels     int             `json:"main_repo_labels"`
-	Notes          []string        `json:"notes"`
-	Cases          []loadBenchCase `json:"cases"`
+	Input             string          `json:"input"`
+	InputBytes        uint64          `json:"bazel_streamed_proto_input_bytes"`
+	GoCodeRevision    string          `json:"go_code_revision,omitempty"`
+	GoVersion         string          `json:"go_version"`
+	GraphTargets      uint64          `json:"graph_targets"`
+	SourceSeeds       int             `json:"source_file_seeds"`
+	HistogramRequests uint64          `json:"histogram_requests"`
+	HistogramMean     float64         `json:"histogram_mean_targets"`
+	Notes             []string        `json:"notes"`
+	Cases             []loadBenchCase `json:"cases"`
+	Scale             scaleReport     `json:"scale_model"`
 }
 
-func benchmarkLoadAndCheck(graph queryGraph, batchesText, targetsText string) (loadBenchReport, error) {
+var benchResultSink int
+
+func parseBenchmarkCounts(raw string) ([]int, error) {
+	var counts []int
+	for _, part := range strings.Split(raw, ",") {
+		count, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || count <= 0 {
+			return nil, fmt.Errorf("invalid positive benchmark count %q", part)
+		}
+		counts = append(counts, count)
+	}
+	return counts, nil
+}
+
+func benchmarkLoadAndCheck(graph queryGraph, histogram targetHistogram, batchesText string, candidateTargets int, store []blobStoreProfile, scaleTrials int) (loadBenchReport, error) {
 	batchCounts, err := parseBenchmarkCounts(batchesText)
 	if err != nil {
 		return loadBenchReport{}, err
 	}
-	targetCounts, err := parseBenchmarkCounts(targetsText)
-	if err != nil {
-		return loadBenchReport{}, err
-	}
 	report := loadBenchReport{
-		GoVersion:    runtime.Version(),
-		GraphTargets: graph.scanned,
+		GoVersion:         runtime.Version(),
+		GraphTargets:      graph.scanned,
+		HistogramRequests: histogram.requests(),
+		HistogramMean:     histogram.mean(),
 		Notes: []string{
-			"One new batch versus B in-flight batches with K synthetic uniformly sampled affected targets in each; source labels and capped dependency degrees come from the complete go-code Bazel query, but changed sets and Tango dependency neighbors are synthetic.",
-			"ID64 stores sorted fixed-width uint64 values; NameKey stores sorted UTF-8 target names prefixed by unsigned-varint lengths; TangoSnapshot stores framed default-field GetTargetGraphResponse-shaped protobuf messages, optionally gzip/best-speed per response message.",
-			"ID64 includes a minimal sparse ID-to-name dictionary containing one eight-byte ID, unsigned-varint length, and exact canonical label per distinct target in all B batches and the candidate. This excludes real database row/key overhead and historically registered labels.",
-			"Go heap is measured after GC on actual decoded B signatures plus candidate, excluding the shared source label pool, benchmark workload indices, temporary serialized buffers, and ID64's dictionary held in storage.",
-			"Deserialize timing is local Go CPU to decode every B signature from the generated blob bytes, including validation; it excludes blob GET/transfer and concurrent decode scheduling. Tango gzip timing includes actual gzip decompression and the same protobuf parsing.",
-			"Check timing is local Go CPU for one candidate intersecting all B already-decoded batches, independent of whether the TangoSnapshot blob was stored raw or gzip.",
-			"Blob bytes exclude per-batch object-store framing, object keys, base-epoch/policy headers, checksums, metadata and the new candidate's optional persisted signature. TangoSnapshot is not an observed GetChangedTargets response; actual old/new detail can be larger.",
+			"One new batch versus B in-flight batches; one batch is one request. Each batch's target count is drawn from the Hive per-request histogram (batch i always draws the same count, so smaller B is a prefix of larger B).",
+			"Affected sets are closure-shaped synthetic sets on the complete go-code graph: the reverse-dependency closure of a random source file, widened by climbing to a dependency until the drawn count is reached. They are not observed diffs.",
+			"ID64 stores sorted uint64 target IDs; NameKey stores sorted varint-prefixed UTF-8 labels; TangoSnapshot stores default-field GetTargetGraphResponse-shaped protobuf for the affected targets with their real direct dependencies in the response metadata, raw or per-message gzip/best-speed.",
+			"Go heap is measured after GC on all B decoded signatures plus the candidate, excluding the shared graph, workload indices, serialized buffers and ID64's dictionary held in storage.",
+			"Deserialize time is serial single-goroutine Go CPU for all B blobs; check time is local Go CPU for one candidate against all B decoded batches.",
 		},
 	}
-	var labels []benchLabel
-	for _, target := range graph.targets {
-		if strings.HasPrefix(target.name, "//") && !strings.HasPrefix(target.name, "//external:") {
-			labels = append(labels, benchLabel{name: target.name, degree: uint8(min(32, len(target.deps)))})
-		}
+	if candidateTargets <= 0 || candidateTargets > len(graph.targets) {
+		return loadBenchReport{}, fmt.Errorf("candidate targets %d must be between 1 and %d", candidateTargets, len(graph.targets))
 	}
+	closures := newClosureGraph(graph)
 	graph.targets = nil
-	if len(labels) == 0 {
-		return loadBenchReport{}, fmt.Errorf("no main-repository target labels in input")
-	}
-	report.MainLabels = len(labels)
-	for _, count := range targetCounts {
-		if count > len(labels) {
-			return loadBenchReport{}, fmt.Errorf("%d targets per batch exceeds %d available labels", count, len(labels))
-		}
-	}
+	report.SourceSeeds = len(closures.sources)
+	runtime.GC()
 
-	// This dictionary is benchmark preparation, not part of any one request.
-	registeredIDs := make([]uint64, len(labels))
-	registry := make(map[uint64]string)
-	for i, label := range labels {
-		registeredIDs[i] = registerTargetID(label.name, registry)
+	registeredIDs := make([]uint64, len(closures.names))
+	registry := make(map[uint64]string, len(closures.names))
+	for i, name := range closures.names {
+		registeredIDs[i] = registerTargetID(name, registry)
 	}
 	registry = nil
 	runtime.GC()
 
+	generator := newAffectedSetGenerator(closures)
+	maxBatches := slices.Max(batchCounts)
+	sizes := sampledBatchTargets(histogram, maxBatches, len(closures.names))
 	for _, batches := range batchCounts {
-		for _, targets := range targetCounts {
-			workload := newBenchWorkload(len(labels), batches, targets)
-			entry := loadBenchCase{
-				InFlight:         batches,
-				TargetsPerBatch:  targets,
-				CandidateTargets: len(workload.candidate),
-			}
-			entry.NameRegistryEntries, entry.NameRegistryBytes = minimalIDRegistryBytes(labels, workload)
-			entry.SortedIDs, err = benchmarkDecodedIDs(registeredIDs, workload)
-			if err != nil {
-				return loadBenchReport{}, err
-			}
-			runtime.GC()
-			entry.SortedNames, err = benchmarkDecodedNames(labels, workload)
-			if err != nil {
-				return loadBenchReport{}, err
-			}
-			runtime.GC()
-			entry.TangoSnapshot, err = benchmarkDecodedTango(labels, workload)
-			if err != nil {
-				return loadBenchReport{}, err
-			}
-			if entry.SortedIDs.MatchingBatches != entry.SortedNames.MatchingBatches ||
-				entry.SortedIDs.MatchingBatches != entry.TangoSnapshot.MatchingBatches {
-				return loadBenchReport{}, fmt.Errorf("decoded modes disagree on matches for batches=%d targets=%d", batches, targets)
-			}
-			report.Cases = append(report.Cases, entry)
-			runtime.GC()
-			runtime.KeepAlive(workload)
+		workload := newSampledWorkload(generator, sizes[:batches], candidateTargets)
+		sorted := slices.Sorted(slices.Values(sizes[:batches]))
+		entry := loadBenchCase{
+			InFlight:           batches,
+			TotalTargets:       workload.totalTargets(),
+			MedianBatchTargets: sorted[len(sorted)/2],
+			MaxBatchTargets:    sorted[len(sorted)-1],
+			CandidateTargets:   len(workload.candidate),
 		}
+		entry.NameRegistryEntries, entry.NameRegistryBytes = minimalIDRegistryBytes(closures.names, workload)
+		entry.SortedIDs, err = benchmarkDecodedIDs(registeredIDs, workload)
+		if err != nil {
+			return loadBenchReport{}, err
+		}
+		runtime.GC()
+		entry.SortedNames, err = benchmarkDecodedNames(closures.names, workload)
+		if err != nil {
+			return loadBenchReport{}, err
+		}
+		runtime.GC()
+		entry.TangoSnapshot, err = benchmarkDecodedTango(closures, workload)
+		if err != nil {
+			return loadBenchReport{}, err
+		}
+		if entry.SortedIDs.MatchingBatches != entry.SortedNames.MatchingBatches ||
+			entry.SortedIDs.MatchingBatches != entry.TangoSnapshot.MatchingBatches {
+			return loadBenchReport{}, fmt.Errorf("decoded modes disagree on matches for batches=%d", batches)
+		}
+		report.Cases = append(report.Cases, entry)
+		runtime.GC()
 	}
+	report.Scale = modelScale(report.Cases, histogram, store, scaleTrials)
 	runtime.KeepAlive(registeredIDs)
-	runtime.KeepAlive(labels)
 	return report, nil
 }
 
-func minimalIDRegistryBytes(labels []benchLabel, workload benchWorkload) (int, uint64) {
-	seen := make([]bool, len(labels))
+func minimalIDRegistryBytes(names []string, workload benchWorkload) (int, uint64) {
+	seen := make([]bool, len(names))
 	var entries int
 	var bytes uint64
 	record := func(index uint32) {
@@ -159,7 +170,7 @@ func minimalIDRegistryBytes(labels []benchLabel, workload benchWorkload) (int, u
 		}
 		seen[index] = true
 		entries++
-		length := len(labels[index].name)
+		length := len(names[index])
 		bytes += uint64(8 + unsignedVarintBytes(uint64(length)) + length)
 	}
 	for _, batch := range workload.batches {
@@ -182,32 +193,34 @@ func benchmarkDecodedIDs(registeredIDs []uint64, workload benchWorkload) (loadBe
 		batches: make([][]uint64, len(workload.batches)),
 	}
 	var result loadBenchMode
+	var decode time.Duration
 	for i, indices := range workload.batches {
 		blob := encodeIDSignature(indices, registeredIDs)
 		result.BlobBytes += uint64(len(blob))
+		result.MaxBlobBytes = max(result.MaxBlobBytes, uint64(len(blob)))
 		start := time.Now()
 		decoded, err := decodeIDSignature(blob)
-		result.DeserializeMilliseconds += float64(time.Since(start).Microseconds()) / 1000
+		decode += time.Since(start)
 		if err != nil {
 			return loadBenchMode{}, err
 		}
 		data.batches[i] = decoded
 	}
+	result.DeserializeMilliseconds = milliseconds(decode)
 	data.candidate = make([]uint64, len(workload.candidate))
 	for i, index := range workload.candidate {
 		data.candidate[i] = registeredIDs[index]
 	}
 	slices.Sort(data.candidate)
 	result.DecodedHeapBytes = heapAboveBaseline(baseline, data)
-	result.CheckMicroseconds, result.CheckAllocBytes, result.MatchingBatches = benchmarkLookup(func() int {
+	result.CheckMicroseconds, result.MatchingBatches = benchmarkLookup(func() int {
 		return countIntersectingSortedSignatures(data.batches, data.candidate)
 	})
 	runtime.KeepAlive(data)
-	runtime.KeepAlive(workload)
 	return result, nil
 }
 
-func benchmarkDecodedNames(labels []benchLabel, workload benchWorkload) (loadBenchMode, error) {
+func benchmarkDecodedNames(names []string, workload benchWorkload) (loadBenchMode, error) {
 	baseline := liveHeap()
 	data := struct {
 		batches   [][]string
@@ -216,33 +229,34 @@ func benchmarkDecodedNames(labels []benchLabel, workload benchWorkload) (loadBen
 		batches: make([][]string, len(workload.batches)),
 	}
 	var result loadBenchMode
+	var decode time.Duration
 	for i, indices := range workload.batches {
-		blob := encodeNameSignature(indices, labels)
+		blob := encodeNameSignature(indices, names)
 		result.BlobBytes += uint64(len(blob))
+		result.MaxBlobBytes = max(result.MaxBlobBytes, uint64(len(blob)))
 		start := time.Now()
 		decoded, err := decodeNameSignature(blob, len(indices))
-		result.DeserializeMilliseconds += float64(time.Since(start).Microseconds()) / 1000
+		decode += time.Since(start)
 		if err != nil {
 			return loadBenchMode{}, err
 		}
 		data.batches[i] = decoded
 	}
+	result.DeserializeMilliseconds = milliseconds(decode)
 	data.candidate = make([]string, len(workload.candidate))
 	for i, index := range workload.candidate {
-		data.candidate[i] = strings.Clone(labels[index].name)
+		data.candidate[i] = strings.Clone(names[index])
 	}
 	slices.Sort(data.candidate)
 	result.DecodedHeapBytes = heapAboveBaseline(baseline, data)
-	result.CheckMicroseconds, result.CheckAllocBytes, result.MatchingBatches = benchmarkLookup(func() int {
+	result.CheckMicroseconds, result.MatchingBatches = benchmarkLookup(func() int {
 		return countIntersectingSortedSignatures(data.batches, data.candidate)
 	})
 	runtime.KeepAlive(data)
-	runtime.KeepAlive(labels)
-	runtime.KeepAlive(workload)
 	return result, nil
 }
 
-func benchmarkDecodedTango(labels []benchLabel, workload benchWorkload) (loadBenchTango, error) {
+func benchmarkDecodedTango(graph closureGraph, workload benchWorkload) (loadBenchTango, error) {
 	baseline := liveHeap()
 	data := struct {
 		batches   []decodedTangoBatch
@@ -252,18 +266,13 @@ func benchmarkDecodedTango(labels []benchLabel, workload benchWorkload) (loadBen
 		candidate: make(map[string]struct{}, len(workload.candidate)),
 	}
 	for _, index := range workload.candidate {
-		data.candidate[labels[index].name] = struct{}{}
+		data.candidate[graph.names[index]] = struct{}{}
 	}
 	var result loadBenchTango
+	var rawDecode, gzipDecode time.Duration
 	for i, indices := range workload.batches {
-		batch, _ := buildSyntheticTangoBatch(labels, indices)
-		graph := compactGraph{
-			targets:   batch.targets,
-			names:     batch.names,
-			ruleTypes: map[int32]string{1: "go_library"},
-		}
 		var rawFrames, gzipFrames [][]byte
-		err := streamProtoMessages(graph, defaultPayload, 4_250_000, func(frame []byte) error {
+		err := streamProtoMessages(syntheticTangoResponse(graph, indices), defaultPayload, 4_250_000, func(frame []byte) error {
 			compressed, err := gzipTangoFrame(frame)
 			if err != nil {
 				return err
@@ -287,7 +296,9 @@ func benchmarkDecodedTango(labels []benchLabel, workload benchWorkload) (loadBen
 		if err := validateDecodedTangoBatch(raw, len(indices)); err != nil {
 			return loadBenchTango{}, err
 		}
-		result.RawDeserializeMs += float64(time.Since(start).Microseconds()) / 1000
+		rawDecode += time.Since(start)
+		runtime.KeepAlive(raw)
+		raw = decodedTangoBatch{}
 
 		decoded := newDecodedTangoBatch(len(indices))
 		start = time.Now()
@@ -299,12 +310,13 @@ func benchmarkDecodedTango(labels []benchLabel, workload benchWorkload) (loadBen
 		if err := validateDecodedTangoBatch(decoded, len(indices)); err != nil {
 			return loadBenchTango{}, err
 		}
-		result.GzipDeserializeMs += float64(time.Since(start).Microseconds()) / 1000
+		gzipDecode += time.Since(start)
 		data.batches[i] = decoded
-		runtime.KeepAlive(raw)
 	}
+	result.RawDeserializeMs = milliseconds(rawDecode)
+	result.GzipDeserializeMs = milliseconds(gzipDecode)
 	result.DecodedHeapBytes = heapAboveBaseline(baseline, data)
-	result.CheckMicroseconds, result.CheckAllocBytes, result.MatchingBatches = benchmarkLookup(func() int {
+	result.CheckMicroseconds, result.MatchingBatches = benchmarkLookup(func() int {
 		matches := 0
 		for _, batch := range data.batches {
 			for _, target := range batch.targets {
@@ -317,7 +329,121 @@ func benchmarkDecodedTango(labels []benchLabel, workload benchWorkload) (loadBen
 		return matches
 	})
 	runtime.KeepAlive(data)
-	runtime.KeepAlive(labels)
-	runtime.KeepAlive(workload)
 	return result, nil
+}
+
+// syntheticTangoResponse models a changed-targets response for one batch: one
+// default-field optimized target per affected target, with its real direct
+// dependencies, and response-local IDs for every named target.
+func syntheticTangoResponse(graph closureGraph, indices []uint32) compactGraph {
+	targets := make([]optimizedTarget, 0, len(indices))
+	names := make(map[int32]string, len(indices)*2)
+	ids := make(map[uint32]int32, len(indices)*2)
+	idFor := func(index uint32) int32 {
+		if id, ok := ids[index]; ok {
+			return id
+		}
+		id := int32(len(ids) + 1)
+		ids[index] = id
+		names[id] = graph.names[index]
+		return id
+	}
+	for _, index := range indices {
+		idFor(index)
+	}
+	for _, index := range indices {
+		target := optimizedTarget{id: ids[index], ruleType: 1}
+		for _, dep := range graph.deps[index] {
+			target.directDependencies = append(target.directDependencies, idFor(dep))
+		}
+		targets = append(targets, target)
+	}
+	return compactGraph{targets: targets, names: names, ruleTypes: map[int32]string{1: "go_library"}}
+}
+
+func milliseconds(d time.Duration) float64 { return float64(d.Nanoseconds()) / 1e6 }
+
+func unsignedVarintBytes(value uint64) int {
+	n := 1
+	for value >= 0x80 {
+		value >>= 7
+		n++
+	}
+	return n
+}
+
+// countIntersectingSortedSignatures counts batches sharing at least one element with
+// the sorted candidate, stopping at the first shared element of each batch.
+func countIntersectingSortedSignatures[T cmp.Ordered](batches [][]T, candidate []T) int {
+	matches := 0
+	for _, batch := range batches {
+		existingIndex, candidateIndex := 0, 0
+		for existingIndex < len(batch) && candidateIndex < len(candidate) {
+			if batch[existingIndex] == candidate[candidateIndex] {
+				matches++
+				break
+			}
+			if batch[existingIndex] < candidate[candidateIndex] {
+				existingIndex++
+			} else {
+				candidateIndex++
+			}
+		}
+	}
+	return matches
+}
+
+func splitMix64(x uint64) uint64 {
+	x += 0x9e3779b97f4a7c15
+	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
+	x = (x ^ x>>27) * 0x94d049bb133111eb
+	return x ^ x>>31
+}
+
+// registerTargetID derives a collision-checked 64-bit ID for a label against an
+// in-memory stand-in for the durable ID-to-name dictionary.
+func registerTargetID(label string, registry map[uint64]string) uint64 {
+	const domain, repository = "submitqueue-target-id/v1", "go-code"
+	for probe := uint32(0); ; probe++ {
+		payload := binary.AppendUvarint([]byte(domain), uint64(len(repository)))
+		payload = append(payload, repository...)
+		payload = binary.AppendUvarint(payload, uint64(len(label)))
+		payload = append(payload, label...)
+		payload = binary.BigEndian.AppendUint32(payload, probe)
+		digest := sha256.Sum256(payload)
+		id := binary.BigEndian.Uint64(digest[:8])
+		if id == 0 {
+			continue
+		}
+		if existing, ok := registry[id]; ok {
+			if existing == label {
+				return id
+			}
+			continue
+		}
+		registry[id] = label
+		return id
+	}
+}
+
+func liveHeap() uint64 {
+	runtime.GC()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.HeapAlloc
+}
+
+// benchmarkLookup returns the mean microseconds per run and the matches of one run.
+func benchmarkLookup(run func() int) (float64, int) {
+	runtime.GC()
+	start := time.Now()
+	iterations := 0
+	totalMatches := 0
+	for iterations < 2 || (time.Since(start) < 200*time.Millisecond && iterations < 1000) {
+		totalMatches += run()
+		iterations++
+	}
+	duration := time.Since(start)
+	benchResultSink += totalMatches
+	return float64(duration.Nanoseconds()) / 1e3 / float64(iterations), totalMatches / iterations
 }

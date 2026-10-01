@@ -1,0 +1,67 @@
+{
+  "trials": 200000,
+  "base_nodes": 40,
+  "notes": [
+    "Toy random DAGs, not go-code: rates show whether a rule can miss conflicts, not how often production would.",
+    "Signatures follow Tango's GetChangedTargets: reverse closure, in the changed graph, of edited targets, rewired targets and new targets.",
+    "A pair is independent when neither batch transitively depends on the other; truth is a shared affected target in the first graph containing both changes."
+  ],
+  "rules": [
+    {
+      "rule": {
+        "name": "affected",
+        "added_deps": false,
+        "inherit_dependency_signatures": false,
+        "inherit_structural_only": false
+      },
+      "same_base_independent_pairs": 189645,
+      "same_base_missed_conflicts": 28529,
+      "cross_base_independent_pairs": 102737,
+      "cross_base_missed_conflicts": 15862,
+      "false_conflicts": 4868,
+      "mean_comparison_signature_targets": 6.530785180519154
+    },
+    {
+      "rule": {
+        "name": "affected+added-deps",
+        "added_deps": true,
+        "inherit_dependency_signatures": false,
+        "inherit_structural_only": false
+      },
+      "same_base_independent_pairs": 152898,
+      "same_base_missed_conflicts": 1451,
+      "cross_base_independent_pairs": 86644,
+      "cross_base_missed_conflicts": 1416,
+      "false_conflicts": 9854,
+      "mean_comparison_signature_targets": 7.352695695211527
+    },
+    {
+      "rule": {
+        "name": "affected+added-deps+inherit-structural",
+        "added_deps": true,
+        "inherit_dependency_signatures": true,
+        "inherit_structural_only": true
+      },
+      "same_base_independent_pairs": 135393,
+      "same_base_missed_conflicts": 0,
+      "cross_base_independent_pairs": 62040,
+      "cross_base_missed_conflicts": 0,
+      "false_conflicts": 49319,
+      "mean_comparison_signature_targets": 11.093508509465586
+    },
+    {
+      "rule": {
+        "name": "affected+added-deps+inherit-all",
+        "added_deps": true,
+        "inherit_dependency_signatures": true,
+        "inherit_structural_only": false
+      },
+      "same_base_independent_pairs": 131053,
+      "same_base_missed_conflicts": 0,
+      "cross_base_independent_pairs": 56248,
+      "cross_base_missed_conflicts": 0,
+      "false_conflicts": 59608,
+      "mean_comparison_signature_targets": 12.430846297192007
+    }
+  ]
+}

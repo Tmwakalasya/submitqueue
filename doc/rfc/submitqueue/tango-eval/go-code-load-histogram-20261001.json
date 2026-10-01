@@ -1,0 +1,1613 @@
+{
+  "input": "/tmp/sq-go-code-full-20260928.streamed_proto",
+  "bazel_streamed_proto_input_bytes": 2799274578,
+  "go_code_revision": "c5655f3f7e87f",
+  "go_version": "go1.26.3",
+  "graph_targets": 2969283,
+  "source_file_seeds": 1533786,
+  "histogram_requests": 58876,
+  "histogram_mean_targets": 2526.781642774645,
+  "notes": [
+    "One new batch versus B in-flight batches; one batch is one request. Each batch's target count is drawn from the Hive per-request histogram (batch i always draws the same count, so smaller B is a prefix of larger B).",
+    "Affected sets are closure-shaped synthetic sets on the complete go-code graph: the reverse-dependency closure of a random source file, widened by climbing to a dependency until the drawn count is reached. They are not observed diffs.",
+    "ID64 stores sorted uint64 target IDs; NameKey stores sorted varint-prefixed UTF-8 labels; TangoSnapshot stores default-field GetTargetGraphResponse-shaped protobuf for the affected targets with their real direct dependencies in the response metadata, raw or per-message gzip/best-speed.",
+    "Go heap is measured after GC on all B decoded signatures plus the candidate, excluding the shared graph, workload indices, serialized buffers and ID64's dictionary held in storage.",
+    "Deserialize time is serial single-goroutine Go CPU for all B blobs; check time is local Go CPU for one candidate against all B decoded batches."
+  ],
+  "cases": [
+    {
+      "in_flight_batches": 100,
+      "total_batch_targets": 177555,
+      "median_batch_targets": 34,
+      "max_batch_targets": 149002,
+      "candidate_targets": 2527,
+      "id_registry_entries": 157288,
+      "id_registry_minimal_bytes": 17572035,
+      "id64": {
+        "batch_blob_bytes": 1420440,
+        "max_single_batch_blob_bytes": 1192016,
+        "decoded_go_heap_bytes": 1460392,
+        "deserialize_milliseconds": 1.10812,
+        "check_microseconds": 319.114629984051,
+        "matching_batches": 31
+      },
+      "namekey": {
+        "batch_blob_bytes": 18356758,
+        "max_single_batch_blob_bytes": 15444347,
+        "decoded_go_heap_bytes": 22700024,
+        "deserialize_milliseconds": 16.259201,
+        "check_microseconds": 1314.0653790849674,
+        "matching_batches": 31
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 110111157,
+        "gzip_batch_blob_bytes": 27007012,
+        "decoded_go_heap_bytes": 175054592,
+        "raw_deserialize_milliseconds": 284.178867,
+        "gzip_deserialize_milliseconds": 928.707633,
+        "check_microseconds": 700.9578461538462,
+        "matching_batches": 31
+      }
+    },
+    {
+      "in_flight_batches": 250,
+      "total_batch_targets": 1128207,
+      "median_batch_targets": 38,
+      "max_batch_targets": 831151,
+      "candidate_targets": 2527,
+      "id_registry_entries": 832221,
+      "id_registry_minimal_bytes": 89665731,
+      "id64": {
+        "batch_blob_bytes": 9025656,
+        "max_single_batch_blob_bytes": 6649208,
+        "decoded_go_heap_bytes": 9096584,
+        "deserialize_milliseconds": 5.257342,
+        "check_microseconds": 639.3606166134185,
+        "matching_batches": 72
+      },
+      "namekey": {
+        "batch_blob_bytes": 113203407,
+        "max_single_batch_blob_bytes": 82894949,
+        "decoded_go_heap_bytes": 138875248,
+        "deserialize_milliseconds": 92.194151,
+        "check_microseconds": 6947.268724137931,
+        "matching_batches": 72
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 442763617,
+        "gzip_batch_blob_bytes": 107934164,
+        "decoded_go_heap_bytes": 767743424,
+        "raw_deserialize_milliseconds": 1546.66784,
+        "gzip_deserialize_milliseconds": 3469.78557,
+        "check_microseconds": 5442.542243243243,
+        "matching_batches": 72
+      }
+    },
+    {
+      "in_flight_batches": 500,
+      "total_batch_targets": 1723599,
+      "median_batch_targets": 39,
+      "max_batch_targets": 831151,
+      "candidate_targets": 2527,
+      "id_registry_entries": 845798,
+      "id_registry_minimal_bytes": 91655873,
+      "id64": {
+        "batch_blob_bytes": 13788792,
+        "max_single_batch_blob_bytes": 6649208,
+        "decoded_go_heap_bytes": 13932160,
+        "deserialize_milliseconds": 5.930734,
+        "check_microseconds": 1660.6582975206613,
+        "matching_batches": 146
+      },
+      "namekey": {
+        "batch_blob_bytes": 173482346,
+        "max_single_batch_blob_bytes": 82894949,
+        "decoded_go_heap_bytes": 212558648,
+        "deserialize_milliseconds": 117.94745,
+        "check_microseconds": 8186.6921600000005,
+        "matching_batches": 146
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 765929522,
+        "gzip_batch_blob_bytes": 186478740,
+        "decoded_go_heap_bytes": 1287503088,
+        "raw_deserialize_milliseconds": 2535.467949,
+        "gzip_deserialize_milliseconds": 6041.633127,
+        "check_microseconds": 17590.712750000002,
+        "matching_batches": 146
+      }
+    },
+    {
+      "in_flight_batches": 1000,
+      "total_batch_targets": 2627040,
+      "median_batch_targets": 40,
+      "max_batch_targets": 831151,
+      "candidate_targets": 2527,
+      "id_registry_entries": 850830,
+      "id_registry_minimal_bytes": 92108906,
+      "id64": {
+        "batch_blob_bytes": 21016320,
+        "max_single_batch_blob_bytes": 6649208,
+        "decoded_go_heap_bytes": 21303016,
+        "deserialize_milliseconds": 12.965979,
+        "check_microseconds": 3040.473393939394,
+        "matching_batches": 312
+      },
+      "namekey": {
+        "batch_blob_bytes": 263674500,
+        "max_single_batch_blob_bytes": 82894949,
+        "decoded_go_heap_bytes": 323208568,
+        "deserialize_milliseconds": 182.227514,
+        "check_microseconds": 15193.300928571427,
+        "matching_batches": 312
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 1334758663,
+        "gzip_batch_blob_bytes": 326331330,
+        "decoded_go_heap_bytes": 2194150784,
+        "raw_deserialize_milliseconds": 3991.475172,
+        "gzip_deserialize_milliseconds": 10161.646615,
+        "check_microseconds": 34701.05383333333,
+        "matching_batches": 312
+      }
+    },
+    {
+      "in_flight_batches": 2500,
+      "total_batch_targets": 5192014,
+      "median_batch_targets": 39,
+      "max_batch_targets": 831151,
+      "candidate_targets": 2527,
+      "id_registry_entries": 855213,
+      "id_registry_minimal_bytes": 92642012,
+      "id64": {
+        "batch_blob_bytes": 41536112,
+        "max_single_batch_blob_bytes": 6649208,
+        "decoded_go_heap_bytes": 42239392,
+        "deserialize_milliseconds": 32.321787,
+        "check_microseconds": 8535.270541666667,
+        "matching_batches": 814
+      },
+      "namekey": {
+        "batch_blob_bytes": 521330120,
+        "max_single_batch_blob_bytes": 82894949,
+        "decoded_go_heap_bytes": 638872048,
+        "deserialize_milliseconds": 351.862969,
+        "check_microseconds": 40075.9066,
+        "matching_batches": 814
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 2908708672,
+        "gzip_batch_blob_bytes": 708055385,
+        "decoded_go_heap_bytes": 4718199712,
+        "raw_deserialize_milliseconds": 8121.403348,
+        "gzip_deserialize_milliseconds": 22093.803663,
+        "check_microseconds": 74588.15733333334,
+        "matching_batches": 814
+      }
+    },
+    {
+      "in_flight_batches": 5000,
+      "total_batch_targets": 8806334,
+      "median_batch_targets": 40,
+      "max_batch_targets": 831151,
+      "candidate_targets": 2527,
+      "id_registry_entries": 872380,
+      "id_registry_minimal_bytes": 94919655,
+      "id64": {
+        "batch_blob_bytes": 70450672,
+        "max_single_batch_blob_bytes": 6649208,
+        "decoded_go_heap_bytes": 71939632,
+        "deserialize_milliseconds": 25.314694,
+        "check_microseconds": 23643.63922222222,
+        "matching_batches": 1709
+      },
+      "namekey": {
+        "batch_blob_bytes": 886950100,
+        "max_single_batch_blob_bytes": 82894949,
+        "decoded_go_heap_bytes": 1086451624,
+        "deserialize_milliseconds": 691.928778,
+        "check_microseconds": 73687.56766666667,
+        "matching_batches": 1709
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 5112463982,
+        "gzip_batch_blob_bytes": 1236702725,
+        "decoded_go_heap_bytes": 8267814752,
+        "raw_deserialize_milliseconds": 13713.883966,
+        "gzip_deserialize_milliseconds": 37459.182918,
+        "check_microseconds": 122608.7415,
+        "matching_batches": 1709
+      }
+    },
+    {
+      "in_flight_batches": 10000,
+      "total_batch_targets": 21208724,
+      "median_batch_targets": 41,
+      "max_batch_targets": 2856456,
+      "candidate_targets": 2527,
+      "id_registry_entries": 2857355,
+      "id_registry_minimal_bytes": 306475453,
+      "id64": {
+        "batch_blob_bytes": 169669792,
+        "max_single_batch_blob_bytes": 22851648,
+        "decoded_go_heap_bytes": 172616808,
+        "deserialize_milliseconds": 123.044387,
+        "check_microseconds": 31983.78614285714,
+        "matching_batches": 3424
+      },
+      "namekey": {
+        "batch_blob_bytes": 2136662598,
+        "max_single_batch_blob_bytes": 283519384,
+        "decoded_go_heap_bytes": 2615727600,
+        "deserialize_milliseconds": 1880.892051,
+        "check_microseconds": 151732.2155,
+        "matching_batches": 3424
+      },
+      "tango_snapshot": {
+        "raw_batch_blob_bytes": 11205573238,
+        "gzip_batch_blob_bytes": 2788124331,
+        "decoded_go_heap_bytes": 18536265608,
+        "raw_deserialize_milliseconds": 32914.078754,
+        "gzip_deserialize_milliseconds": 87958.863152,
+        "check_microseconds": 291976.636,
+        "matching_batches": 3424
+      }
+    }
+  ],
+  "scale_model": {
+    "blob_store_profiles": [
+      {
+        "name": "object-store",
+        "first_byte_ms": 150,
+        "parallel_gets": 32,
+        "mib_per_second": 100
+      },
+      {
+        "name": "kv-point-read",
+        "first_byte_ms": 5,
+        "parallel_gets": 16,
+        "mib_per_second": 100
+      }
+    ],
+    "monte_carlo_trials": 400,
+    "fitted_designs": [
+      {
+        "name": "TangoSnapshot raw",
+        "blob_bytes": {
+          "per_batch": 0,
+          "per_target": 535.4490757797312
+        },
+        "decoded_heap_bytes": {
+          "per_batch": 0,
+          "per_target": 879.6788261242503
+        },
+        "deserialize_milliseconds": {
+          "per_batch": 0,
+          "per_target": 0.0015443414683817991
+        },
+        "check_microseconds": {
+          "per_batch": 0,
+          "per_target": 0.013400936369409026
+        }
+      },
+      {
+        "name": "TangoSnapshot gzip",
+        "blob_bytes": {
+          "per_batch": 0,
+          "per_target": 131.6734308657514
+        },
+        "decoded_heap_bytes": {
+          "per_batch": 0,
+          "per_target": 879.6788261242503
+        },
+        "deserialize_milliseconds": {
+          "per_batch": 0,
+          "per_target": 0.00411403168492311
+        },
+        "check_microseconds": {
+          "per_batch": 0,
+          "per_target": 0.013400936369409026
+        }
+      },
+      {
+        "name": "NameKey",
+        "blob_bytes": {
+          "per_batch": 0,
+          "per_target": 100.66838491676907
+        },
+        "decoded_heap_bytes": {
+          "per_batch": 0,
+          "per_target": 123.29822675620352
+        },
+        "deserialize_milliseconds": {
+          "per_batch": 0,
+          "per_target": 8.157192400166282e-05
+        },
+        "check_microseconds": {
+          "per_batch": 0,
+          "per_target": 0.007271457738270583
+        }
+      },
+      {
+        "name": "ID64",
+        "blob_bytes": {
+          "per_batch": 0,
+          "per_target": 8
+        },
+        "decoded_heap_bytes": {
+          "per_batch": 0,
+          "per_target": 8.139004337688087
+        },
+        "deserialize_milliseconds": {
+          "per_batch": 0,
+          "per_target": 5.039783157931779e-06
+        },
+        "check_microseconds": {
+          "per_batch": 0,
+          "per_target": 0.001708672751452221
+        }
+      }
+    ],
+    "points": [
+      {
+        "in_flight_batches": 100,
+        "total_targets_p50_p99": [
+          118858,
+          3065590
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              60.69412827398995,
+              1565.4252359577047
+            ],
+            "heap_mib_p50_p99": [
+              99.71319762752165,
+              2571.806538179627
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                1.3904986209888235,
+                20.988570121633607
+              ],
+              [
+                0.8254986209888235,
+                20.423570121633606
+              ]
+            ],
+            "check_ms_p50_p99": [
+              1.5928084949952181,
+              41.081776524696615
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              14.925423284379464,
+              384.95707791112795
+            ],
+            "heap_mib_p50_p99": [
+              99.71319762752165,
+              2571.806538179627
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                1.2382398108503856,
+                17.061505172094716
+              ],
+              [
+                0.6732398108503856,
+                16.496505172094718
+              ]
+            ],
+            "check_ms_p50_p99": [
+              1.5928084949952181,
+              41.081776524696615
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              11.41094483798727,
+              294.31151782703216
+            ],
+            "heap_mib_p50_p99": [
+              13.97607863978275,
+              360.47154518275255
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                0.7238049241228623,
+                3.7931812527705793
+              ],
+              [
+                0.15880492412286235,
+                3.2281812527705793
+              ]
+            ],
+            "check_ms_p50_p99": [
+              0.8642709238553649,
+              22.291308127864916
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              0.9068145751953125,
+              23.388595581054688
+            ],
+            "heap_mib_p50_p99": [
+              0.9225709701241785,
+              23.794985110829565
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                0.6096671642985386,
+                0.849335864661671
+              ],
+              [
+                0.044667164298538585,
+                0.28433586466167093
+              ]
+            ],
+            "check_ms_p50_p99": [
+              0.2030894258921081,
+              5.238090100124415
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 200,
+        "total_targets_p50_p99": [
+          284205,
+          3416844
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              145.12758691976404,
+              1744.790994533081
+            ],
+            "heap_mib_p50_p99": [
+              238.42727735389954,
+              2866.483038873375
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                2.94018543621909,
+                23.774683825522352
+              ],
+              [
+                1.9551854362190895,
+                22.789683825522353
+              ]
+            ],
+            "check_ms_p50_p99": [
+              3.808613120867892,
+              45.78890902819701
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              35.688636225891955,
+              429.0652963762832
+            ],
+            "heap_mib_p50_p99": [
+              238.42727735389954,
+              2866.483038873375
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                2.5761147372724924,
+                19.397657442202252
+              ],
+              [
+                1.591114737272492,
+                18.412657442202253
+              ]
+            ],
+            "check_ms_p50_p99": [
+              3.808613120867892,
+              45.78890902819701
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              27.28505929495845,
+              328.0336065221337
+            ],
+            "heap_mib_p50_p99": [
+              33.4186292030781,
+              401.7742217088446
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                1.3460337416104773,
+                4.609054604314874
+              ],
+              [
+                0.36103374161047713,
+                3.6240546043148743
+              ]
+            ],
+            "check_ms_p50_p99": [
+              2.066584646505191,
+              24.84543674426341
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              2.1683120727539062,
+              26.068450927734375
+            ],
+            "heap_mib_p50_p99": [
+              2.2059876707006865,
+              26.52140439720489
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                1.073115452299939,
+                1.327904662121824
+              ],
+              [
+                0.08811545229993906,
+                0.342904662121824
+              ]
+            ],
+            "check_ms_p50_p99": [
+              0.4856133393264785,
+              5.838268238763013
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 500,
+        "total_targets_p50_p99": [
+          930740,
+          4908888
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              475.2768257057447,
+              2506.694357591832
+            ],
+            "heap_mib_p50_p99": [
+              780.8230119961594,
+              4118.19918958227
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                8.590148635339123,
+                35.04794287796012
+              ],
+              [
+                6.3501486353391225,
+                32.807942877960116
+              ]
+            ],
+            "check_ms_p50_p99": [
+              12.472787516463757,
+              65.78369573255554
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              116.87634376906344,
+              616.4265868146102
+            ],
+            "heap_mib_p50_p99": [
+              780.8230119961594,
+              4118.19918958227
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                7.39785728811597,
+                28.759586637884937
+              ],
+              [
+                5.15785728811597,
+                26.519586637884938
+              ]
+            ],
+            "check_ms_p50_p99": [
+              12.472787516463757,
+              65.78369573255554
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              89.35555703872075,
+              471.2770716641509
+            ],
+            "heap_mib_p50_p99": [
+              109.44232136828315,
+              577.2182328651489
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                3.369477822932515,
+                7.513198155510184
+              ],
+              [
+                1.129477822932515,
+                5.273198155510184
+              ]
+            ],
+            "check_ms_p50_p99": [
+              6.767836575317962,
+              35.694771633903606
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              7.100982666015625,
+              37.45184326171875
+            ],
+            "heap_mib_p50_p99": [
+              7.224366090068636,
+              38.10258934519291
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                2.47570055443657,
+                2.799258163683761
+              ],
+              [
+                0.23570055443656965,
+                0.5592581636837609
+              ]
+            ],
+            "check_ms_p50_p99": [
+              1.5903300766866402,
+              8.38768316553079
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 1000,
+        "total_targets_p50_p99": [
+          2006378,
+          7356034
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              1024.5449502609115,
+              3756.3148562472143
+            ],
+            "heap_mib_p50_p99": [
+              1683.2048833861552,
+              6171.176294374536
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                18.143982249258052,
+                53.723376911498576
+              ],
+              [
+                13.65898224925805,
+                49.23837691149858
+              ]
+            ],
+            "check_ms_p50_p99": [
+              26.887343910982146,
+              98.57774356520936
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              251.94804656368694,
+              923.7234443141144
+            ],
+            "heap_mib_p50_p99": [
+              1683.2048833861552,
+              6171.176294374536
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                15.573783129569527,
+                44.30019139451283
+              ],
+              [
+                11.088783129569528,
+                39.81519139451283
+              ]
+            ],
+            "check_ms_p50_p99": [
+              26.887343910982146,
+              98.57774356520936
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              192.62202529195528,
+              706.2149640777974
+            ],
+            "heap_mib_p50_p99": [
+              235.9226699854451,
+              864.9692040999821
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                6.889884366654161,
+                12.46219548717962
+              ],
+              [
+                2.4048843666541613,
+                7.977195487179622
+              ]
+            ],
+            "check_ms_p50_p99": [
+              14.589292833995856,
+              53.48909035228151
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              15.307449340820312,
+              56.12208557128906
+            ],
+            "heap_mib_p50_p99": [
+              15.573424572984647,
+              57.09723723810296
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                4.963186203461048,
+                5.398293671975264
+              ],
+              [
+                0.47818620346104795,
+                0.9132936719752641
+              ]
+            ],
+            "check_ms_p50_p99": [
+              3.4282434177132046,
+              12.569054854556088
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 2000,
+        "total_targets_p50_p99": [
+          4741648,
+          11910855
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              2421.2942497947797,
+              6082.207013603583
+            ],
+            "heap_mib_p50_p99": [
+              3977.897020849609,
+              9992.339081321867
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                40.985666132817414,
+                88.66649743641851
+              ],
+              [
+                32.16066613281742,
+                79.84149743641852
+              ]
+            ],
+            "check_ms_p50_p99": [
+              63.54252313413557,
+              159.61660996025734
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              595.4256631066594,
+              1495.6885742134948
+            ],
+            "heap_mib_p50_p99": [
+              3977.897020849609,
+              9992.339081321867
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                34.91154674181889,
+                73.4085206066598
+              ],
+              [
+                26.086546741818893,
+                64.5835206066598
+              ]
+            ],
+            "check_ms_p50_p99": [
+              63.54252313413557,
+              159.61660996025734
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              455.2212200201304,
+              1143.4998853948816
+            ],
+            "heap_mib_p50_p99": [
+              557.5530913372983,
+              1400.553990030537
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                14.388997550499939,
+                21.856590212803642
+              ],
+              [
+                5.5639975504999395,
+                13.031590212803641
+              ]
+            ],
+            "check_ms_p50_p99": [
+              34.478693041755236,
+              86.60927875916887
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              36.1759033203125,
+              90.87261199951172
+            ],
+            "heap_mib_p50_p99": [
+              36.80447925547604,
+              92.45157290513404
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                9.835655910934365,
+                10.418754246420685
+              ],
+              [
+                1.010655910934366,
+                1.5937542464206846
+              ]
+            ],
+            "check_ms_p50_p99": [
+              8.10192473457792,
+              20.351753384998442
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 5000,
+        "total_targets_p50_p99": [
+          12400741,
+          22563317
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              6332.364375528164,
+              11521.8231527091
+            ],
+            "heap_mib_p50_p99": [
+              10403.317724181044,
+              18928.978168515532
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                106.02462232024402,
+                173.613697634435
+              ],
+              [
+                84.039622320244,
+                151.628697634435
+              ]
+            ],
+            "check_ms_p50_p99": [
+              166.18154107452168,
+              302.369575399805
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              1557.2053077197925,
+              2833.3562479987463
+            ],
+            "heap_mib_p50_p99": [
+              10403.317724181044,
+              18928.978168515532
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                90.13909446772303,
+                144.70976353495172
+              ],
+              [
+                68.15409446772301,
+                122.72476353495172
+              ]
+            ],
+            "check_ms_p50_p99": [
+              166.18154107452168,
+              302.369575399805
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              1190.5313188945388,
+              2166.187935595588
+            ],
+            "heap_mib_p50_p99": [
+              1458.1578977231502,
+              2653.1381376629847
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                36.466865491361695,
+                47.052412535505304
+              ],
+              [
+                14.481865491361692,
+                25.067412535505305
+              ]
+            ],
+            "check_ms_p50_p99": [
+              90.1714641047393,
+              164.0682060007022
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              94.61014556884766,
+              172.14444732666016
+            ],
+            "heap_mib_p50_p99": [
+              96.25404814676905,
+              175.1355504375757
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                24.558598501326152,
+                25.385158698270278
+              ],
+              [
+                2.5735985013261504,
+                3.4001586982702774
+              ]
+            ],
+            "check_ms_p50_p99": [
+              21.188808244516366,
+              38.55332494027868
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 10000,
+        "total_targets_p50_p99": [
+          24651891,
+          41710147
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              12588.340999767945,
+              21299.0376108043
+            ],
+            "heap_mib_p50_p99": [
+              20681.139504073115,
+              34991.77279513352
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                210.9043475430075,
+                324.35508577244366
+              ],
+              [
+                167.07934754300751,
+                280.53008577244367
+              ]
+            ],
+            "check_ms_p50_p99": [
+              330.35842267660706,
+              558.9550259056967
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              3095.6259396539112,
+              5237.692029385404
+            ],
+            "heap_mib_p50_p99": [
+              20681.139504073115,
+              34991.77279513352
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                179.32492006380997,
+                270.9237866346547
+              ],
+              [
+                135.49992006380995,
+                227.09878663465463
+              ]
+            ],
+            "check_ms_p50_p99": [
+              330.35842267660706,
+              558.9550259056967
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              2366.7011757986406,
+              4004.3765384016233
+            ],
+            "heap_mib_p50_p99": [
+              2898.725935446942,
+              4904.54403194483
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                72.62791393713567,
+                90.39614232519841
+              ],
+              [
+                28.80291393713568,
+                46.571142325198416
+              ]
+            ],
+            "check_ms_p50_p99": [
+              179.25518357495295,
+              303.2935711675535
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              188.0790023803711,
+              318.2231674194336
+            ],
+            "heap_mib_p50_p99": [
+              191.34697702523604,
+              323.75246749745156
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                48.955030208876686,
+                50.342441770559795
+              ],
+              [
+                5.130030208876681,
+                6.5174417705597945
+              ]
+            ],
+            "check_ms_p50_p99": [
+              42.12201442347025,
+              71.2689916379666
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 20000,
+        "total_targets_p50_p99": [
+          50179803,
+          68436214
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              25624.01689449213,
+              34946.54420486822
+            ],
+            "heap_mib_p50_p99": [
+              42097.19676798452,
+              57412.994762332906
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                427.48491959305073,
+                548.9043252679332
+              ],
+              [
+                339.98491959305073,
+                461.40432526793325
+              ]
+            ],
+            "check_ms_p50_p99": [
+              672.4563470324802,
+              917.1093491772591
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              6301.256962945486,
+              8593.779652445573
+            ],
+            "heap_mib_p50_p99": [
+              42097.19676798452,
+              57412.994762332906
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                363.2038691146546,
+                461.2365493166343
+              ],
+              [
+                275.7038691146546,
+                373.7365493166343
+              ]
+            ],
+            "check_ms_p50_p99": [
+              672.4563470324802,
+              917.1093491772591
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              4817.504619075435,
+              6570.208676527386
+            ],
+            "heap_mib_p50_p99": [
+              5900.459984660742,
+              8047.164756877965
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                146.01830926748877,
+                165.0345604126434
+              ],
+              [
+                58.51830926748875,
+                77.5345604126434
+              ]
+            ],
+            "check_ms_p50_p99": [
+              364.88031682924344,
+              497.6310378682416
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              382.84151458740234,
+              522.1268768310547
+            ],
+            "heap_mib_p50_p99": [
+              389.4935934842431,
+              531.199114418936
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                97.83131047190176,
+                99.31617244702036
+              ],
+              [
+                10.331310471901759,
+                11.816172447020364
+              ]
+            ],
+            "check_ms_p50_p99": [
+              85.74086205934042,
+              116.935094074353
+            ]
+          }
+        ]
+      },
+      {
+        "in_flight_batches": 50000,
+        "total_targets_p50_p99": [
+          126844165,
+          157003552
+        ],
+        "designs": [
+          {
+            "name": "TangoSnapshot raw",
+            "blob_mib_p50_p99": [
+              64772.215764333465,
+              80172.9267239904
+            ],
+            "heap_mib_p50_p99": [
+              106413.0078963382,
+              131714.53506536264
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                1078.0628616750978,
+                1278.6463632767422
+              ],
+              [
+                859.2378616750979,
+                1059.8213632767422
+              ]
+            ],
+            "check_ms_p50_p99": [
+              1699.8305839958196,
+              2103.9946101232013
+            ]
+          },
+          {
+            "name": "TangoSnapshot gzip",
+            "blob_mib_p50_p99": [
+              15928.27452740809,
+              19715.496396970182
+            ],
+            "heap_mib_p50_p99": [
+              106413.0078963382,
+              131714.53506536264
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                915.573659131696,
+                1077.5225515431748
+              ],
+              [
+                696.748659131696,
+                858.697551543175
+              ]
+            ],
+            "check_ms_p50_p99": [
+              1699.8305839958196,
+              2103.9946101232013
+            ]
+          },
+          {
+            "name": "NameKey",
+            "blob_mib_p50_p99": [
+              12177.655436197441,
+              15073.102956806153
+            ],
+            "heap_mib_p50_p99": [
+              14915.14264952783,
+              18461.47494890727
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                366.5734769494088,
+                397.9881113797966
+              ],
+              [
+                147.74847694940883,
+                179.16311137979665
+              ]
+            ],
+            "check_ms_p50_p99": [
+              922.3419851437206,
+              1141.6446931263679
+            ]
+          },
+          {
+            "name": "ID64",
+            "blob_mib_p50_p99": [
+              967.7441787719727,
+              1197.842041015625
+            ],
+            "heap_mib_p50_p99": [
+              984.5592585996851,
+              1218.6551959614155
+            ],
+            "load_seconds_p50_p99_by_profile": [
+              [
+                244.76670887416861,
+                247.2196842672613
+              ],
+              [
+                25.941708874168647,
+                28.394684267261315
+              ]
+            ],
+            "check_ms_p50_p99": [
+              216.73516841620952,
+              268.2676911836119
+            ]
+          }
+        ]
+      }
+    ],
+    "crossovers": [
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 81,
+        "first_in_flight_exceeding_at_p99": 10
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 120,
+        "first_in_flight_exceeding_at_p99": 10
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 574,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 732,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 3014,
+        "first_in_flight_exceeding_at_p99": 1030
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 3664,
+        "first_in_flight_exceeding_at_p99": 1136
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "heap_mib",
+        "limit": 1024,
+        "first_in_flight_exceeding_at_p50": 633,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "heap_mib",
+        "limit": 4096,
+        "first_in_flight_exceeding_at_p50": 2249,
+        "first_in_flight_exceeding_at_p99": 450
+      },
+      {
+        "design": "TangoSnapshot raw",
+        "metric": "heap_mib",
+        "limit": 16384,
+        "first_in_flight_exceeding_at_p50": 8397,
+        "first_in_flight_exceeding_at_p99": 4453
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 94,
+        "first_in_flight_exceeding_at_p99": 10
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 133,
+        "first_in_flight_exceeding_at_p99": 10
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 664,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 890,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 3489,
+        "first_in_flight_exceeding_at_p99": 1381
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 4676,
+        "first_in_flight_exceeding_at_p99": 1678
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "heap_mib",
+        "limit": 1024,
+        "first_in_flight_exceeding_at_p50": 633,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "heap_mib",
+        "limit": 4096,
+        "first_in_flight_exceeding_at_p50": 2249,
+        "first_in_flight_exceeding_at_p99": 450
+      },
+      {
+        "design": "TangoSnapshot gzip",
+        "metric": "heap_mib",
+        "limit": 16384,
+        "first_in_flight_exceeding_at_p50": 8397,
+        "first_in_flight_exceeding_at_p99": 4453
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 161,
+        "first_in_flight_exceeding_at_p99": 34
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 450,
+        "first_in_flight_exceeding_at_p99": 55
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 1450,
+        "first_in_flight_exceeding_at_p99": 633
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 3664,
+        "first_in_flight_exceeding_at_p99": 1136
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 8397,
+        "first_in_flight_exceeding_at_p99": 6908
+      },
+      {
+        "design": "NameKey",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 21219,
+        "first_in_flight_exceeding_at_p99": 15834
+      },
+      {
+        "design": "NameKey",
+        "metric": "heap_mib",
+        "limit": 1024,
+        "first_in_flight_exceeding_at_p50": 3664,
+        "first_in_flight_exceeding_at_p99": 1136
+      },
+      {
+        "design": "NameKey",
+        "metric": "heap_mib",
+        "limit": 4096,
+        "first_in_flight_exceeding_at_p50": 14362,
+        "first_in_flight_exceeding_at_p99": 9721
+      },
+      {
+        "design": "NameKey",
+        "metric": "heap_mib",
+        "limit": 16384,
+        "first_in_flight_exceeding_at_p50": 56300,
+        "first_in_flight_exceeding_at_p99": 46318
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 196,
+        "first_in_flight_exceeding_at_p99": 133
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 1,
+        "first_in_flight_exceeding_at_p50": 2142,
+        "first_in_flight_exceeding_at_p99": 1030
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 2142,
+        "first_in_flight_exceeding_at_p99": 1943
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 10,
+        "first_in_flight_exceeding_at_p50": 20208,
+        "first_in_flight_exceeding_at_p99": 17457
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "object-store",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 12406,
+        "first_in_flight_exceeding_at_p99": 12406
+      },
+      {
+        "design": "ID64",
+        "metric": "load_seconds",
+        "profile": "kv-point-read",
+        "limit": 60,
+        "first_in_flight_exceeding_at_p50": 0,
+        "first_in_flight_exceeding_at_p99": 0
+      },
+      {
+        "design": "ID64",
+        "metric": "heap_mib",
+        "limit": 1024,
+        "first_in_flight_exceeding_at_p50": 53619,
+        "first_in_flight_exceeding_at_p99": 42012
+      },
+      {
+        "design": "ID64",
+        "metric": "heap_mib",
+        "limit": 4096,
+        "first_in_flight_exceeding_at_p50": 0,
+        "first_in_flight_exceeding_at_p99": 0
+      },
+      {
+        "design": "ID64",
+        "metric": "heap_mib",
+        "limit": 16384,
+        "first_in_flight_exceeding_at_p50": 0,
+        "first_in_flight_exceeding_at_p99": 0
+      }
+    ]
+  }
+}

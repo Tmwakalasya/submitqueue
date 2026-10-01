@@ -1,0 +1,23 @@
+	Command being timed: "/tmp/tangograph-eval -benchmark-load -input /tmp/sq-go-code-full-20260928.streamed_proto -go-code-revision c5655f3f7e87f -target-histogram doc/rfc/submitqueue/tango-eval/hive-go-diff-target-histogram-20260930.csv -candidate-targets 2527 -benchmark-batches 100,250,500,1000,2500,5000,10000"
+	User time (seconds): 1325.01
+	System time (seconds): 77.42
+	Percent of CPU this job got: 169%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 13:48.32
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 35166136
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 17919234
+	Voluntary context switches: 1424629
+	Involuntary context switches: 41491
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 112
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
