@@ -55,7 +55,7 @@ import (
 	"github.com/uber/submitqueue/stovepipe/core/requestlog"
 	"github.com/uber/submitqueue/stovepipe/extension/buildrunner"
 	buildrunnerfake "github.com/uber/submitqueue/stovepipe/extension/buildrunner/fake"
-	projectresultnoop "github.com/uber/submitqueue/stovepipe/extension/projectresult/noop"
+	projectstatusnoop "github.com/uber/submitqueue/stovepipe/extension/projectstatus/noop"
 	queueconfigdefault "github.com/uber/submitqueue/stovepipe/extension/queueconfig/default"
 	"github.com/uber/submitqueue/stovepipe/extension/sourcecontrol"
 	sourcecontrolfake "github.com/uber/submitqueue/stovepipe/extension/sourcecontrol/fake"
@@ -441,7 +441,7 @@ func registerPrimaryControllers(
 	}
 	count++
 
-	recordController := record.NewController(logger, scope, store, materializer, projectresultnoop.New(), sourceControl, registry, stovepipemq.TopicKeyRecord, "stovepipe-record")
+	recordController := record.NewController(logger, scope, store, materializer, projectstatusnoop.New(), sourceControl, registry, stovepipemq.TopicKeyRecord, "stovepipe-record")
 	if err := c.Register(recordController); err != nil {
 		return count, fmt.Errorf("failed to register record controller: %w", err)
 	}
@@ -531,7 +531,7 @@ func newTopicRegistry(q extqueue.Queue, subscriberName string) (consumer.TopicRe
 			Key:   stovepipemq.TopicKeyBuildSignal,
 			Name:  "buildsignal",
 			Queue: q,
-			Subscription: extqueue.DefaultSubscriptionConfig(
+			Subscription: extqueue.ExtendedSubscriptionConfig(
 				subscriberName, "stovepipe-buildsignal",
 			),
 		},
@@ -539,7 +539,7 @@ func newTopicRegistry(q extqueue.Queue, subscriberName string) (consumer.TopicRe
 			Key:   stovepipemq.TopicKeyRecord,
 			Name:  "record",
 			Queue: q,
-			Subscription: extqueue.DefaultSubscriptionConfig(
+			Subscription: extqueue.ExtendedSubscriptionConfig(
 				subscriberName, "stovepipe-record",
 			),
 		},
