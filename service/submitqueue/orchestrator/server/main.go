@@ -35,6 +35,7 @@ import (
 	pb "github.com/uber/submitqueue/api/submitqueue/orchestrator/protopb"
 	"github.com/uber/submitqueue/platform/errs"
 	genericerrs "github.com/uber/submitqueue/platform/errs/generic"
+	giterrs "github.com/uber/submitqueue/platform/errs/git"
 	httperrs "github.com/uber/submitqueue/platform/errs/http"
 	mysqlerrs "github.com/uber/submitqueue/platform/errs/mysql"
 	"github.com/uber/submitqueue/platform/extension/consumergate"
@@ -430,6 +431,7 @@ func defaultProfilesConfig() profilesConfig {
 func primaryErrorClassifiers() []errs.Classifier {
 	return []errs.Classifier{
 		genericerrs.Classifier,
+		giterrs.Classifier,
 		// HTTP must precede MySQL's broad net.Error match to retain dependency attribution.
 		httperrs.Classifier,
 		mysqlerrs.Classifier,

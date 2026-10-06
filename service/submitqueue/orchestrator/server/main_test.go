@@ -20,12 +20,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/submitqueue/platform/errs"
+	gitrepo "github.com/uber/submitqueue/platform/git/repo"
 	"github.com/uber/submitqueue/platform/githubactions"
 )
 
@@ -74,6 +77,65 @@ func TestPrimaryErrorClassifiers_Storage(t *testing.T) {
 	err := processor.Process(fmt.Errorf("load build: %w", driver.ErrBadConn))
 	assert.True(t, errs.IsRetryable(err))
 	assert.False(t, errs.IsDependencyError(err))
+}
+
+func TestPrimaryErrorClassifiers_GitFetch(t *testing.T) {
+	processor := errs.NewClassifierProcessor(primaryErrorClassifiers()...)
+	for _, tt := range []struct {
+		name       string
+		diagnostic string
+		cancelled  bool
+		retryable  bool
+		dependency bool
+	}{
+		{
+			name:       "temporary DNS failure",
+			diagnostic: "fatal: Could not resolve host: git.example.invalid",
+			retryable:  true,
+			dependency: true,
+		},
+		{
+			name:       "authentication failure",
+			diagnostic: "fatal: Authentication failed for 'https://git.example.invalid/repo'",
+			dependency: true,
+		},
+		{
+			name:       "unknown failure",
+			diagnostic: "fatal: unexpected failure",
+			dependency: true,
+		},
+		{
+			name:      "shutdown",
+			cancelled: true,
+			retryable: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			git := filepath.Join(dir, "git")
+			diagnostic := "'" + strings.ReplaceAll(tt.diagnostic, "'", "'\\''") + "'"
+			script := "#!/bin/sh\nprintf '%s\\n' " + diagnostic + " >&2\nexit 128\n"
+			require.NoError(t, os.WriteFile(git, []byte(script), 0o755))
+			repo, err := gitrepo.NewRepo(gitrepo.RepoConfig{
+				Git:       git,
+				Path:      dir,
+				RemoteURL: "https://git.example.invalid/repo",
+				Target:    "main",
+			})
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancelled {
+				cancel()
+			}
+			err = repo.FetchTarget(ctx)
+			require.Error(t, err)
+			out := processor.Process(fmt.Errorf("fetch target: %w", err))
+			assert.Equal(t, tt.retryable, errs.IsRetryable(out))
+			assert.Equal(t, tt.dependency, errs.IsDependencyError(out))
+		})
+	}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
