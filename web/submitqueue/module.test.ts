@@ -1,8 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import type { Meter } from "@opentelemetry/api";
-import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
-import { createSubmitQueueWeb, type SubmitQueueWebOptions } from "./module.js";
+import { createSubmitQueueWeb, type SubmitQueueWebOptions, type SubmitQueueWebRequest } from "./module.js";
 import { createFakeGatewayReader, gatewayHistoryFixture, gatewayRequestFixture } from "./extension/gateway/mock/index.js";
 import type { SubmitQueueGateway } from "./extension/gateway/index.js";
 import { newHmacCursorCodec } from "./extension/cursor/hmac/index.js";
@@ -19,21 +17,8 @@ const githubPath = "/sq/demo-queue/change/github/github.com/uber/submitqueue/pul
 
 function newWeb(options: Partial<SubmitQueueWebOptions> = {}) {
   const web = createSubmitQueueWeb({ gateway: createFakeGatewayReader(), cursors, paths, ...options });
-  return (path: string, search: Record<string, string | string[]> = {}, extra: { principal?: unknown; requestId?: string } = {}) =>
+  return (path: string, search: Record<string, string | string[]> = {}, extra: Pick<SubmitQueueWebRequest, "principal" | "requestId" | "onLog"> = {}) =>
     web.handle({ path, search, ...extra });
-}
-
-function recordingMeter() {
-  const record = vi.fn();
-  return { meter: { createHistogram: () => ({ record }) } as unknown as Meter, record };
-}
-
-function recordingLogger() {
-  const warn = vi.fn();
-  const error = vi.fn();
-  const child = vi.fn((): Logger => logger);
-  const logger = { child, debug: vi.fn(), info: vi.fn(), warn, error } as unknown as Logger;
-  return { logger, child, warn, error };
 }
 
 function nextPageToken(result: Awaited<ReturnType<ReturnType<typeof newWeb>>>): string {
@@ -217,29 +202,53 @@ describe("createSubmitQueueWeb", () => {
 
   it("logs upstream failures with the request ID while showing a sanitized error", async () => {
     const cause = new ConnectError("upstream failure", Code.Unavailable);
-    const { logger, child, warn } = recordingLogger();
-    const get = newWeb({ gateway: createFakeGatewayReader({ queuesError: cause }), logger });
-    expect(await get("/sq", {}, { requestId: "request-7" })).toMatchObject({
+    const onLog = vi.fn();
+    const get = newWeb({ gateway: createFakeGatewayReader({ queuesError: cause }) });
+    expect(await get("/sq", {}, { requestId: "request-7", onLog })).toMatchObject({
       kind: "render", model: { result: { ok: false, error: { kind: "transient" } } },
     });
-    expect(child).toHaveBeenCalledWith({ requestId: "request-7" });
-    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ operation: "queues", err: cause, code: "unavailable" }), expect.any(String));
+    expect(onLog).toHaveBeenCalledWith("warn", expect.any(String), expect.objectContaining({ requestId: "request-7", operation: "queues", error: cause, code: "unavailable" }));
   });
 
-  it("records each page load's outcome", async () => {
-    const { meter, record } = recordingMeter();
-    await newWeb({ meter })("/sq/demo-queue", { page: "tampered" });
-    expect(record).toHaveBeenCalledWith(expect.any(Number), { page: "queue", outcome: "redirect" });
+  it("keeps overlapping loads bound to their own host logging callbacks", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const cause = new ConnectError("private upstream detail", Code.Unavailable);
+    const gateway = createFakeGatewayReader();
+    vi.spyOn(gateway, "listQueues").mockImplementation(async () => {
+      await ready;
+      throw cause;
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+    const get = newWeb({ gateway });
+    const pending = [
+      get("/sq", {}, { requestId: "first", onLog: first }),
+      get("/sq", {}, { requestId: "second", onLog: second }),
+    ];
+    release();
+    const results = await Promise.all(pending);
+
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledWith("warn", expect.any(String), expect.objectContaining({ requestId: "first", error: cause }));
+    expect(second).toHaveBeenCalledWith("warn", expect.any(String), expect.objectContaining({ requestId: "second", error: cause }));
+    expect(JSON.stringify(results)).not.toContain("private upstream detail");
   });
 
-  it("logs, records, and rethrows an unexpected failure", async () => {
+  it("reports authorization decisions through the current request's callback", async () => {
+    const onLog = vi.fn();
+    const get = newWeb({ authorize: () => false });
+    expect(await get("/sq", {}, { requestId: "denied", onLog })).toEqual({ kind: "forbidden" });
+    expect(onLog).toHaveBeenCalledWith("info", "Web page request was not authorized", { requestId: "denied", path: "/sq" });
+  });
+
+  it("logs and rethrows an unexpected failure", async () => {
     const failure = new Error("bug");
-    const { logger, error } = recordingLogger();
-    const { meter, record } = recordingMeter();
-    const get = newWeb({ gateway: () => { throw failure; }, logger, meter });
-    await expect(get("/sq")).rejects.toBe(failure);
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ err: failure }), "Web page load failed");
-    expect(record).toHaveBeenCalledWith(expect.any(Number), { page: "queues", outcome: "exception" });
+    const onLog = vi.fn();
+    const get = newWeb({ gateway: () => { throw failure; } });
+    await expect(get("/sq", {}, { onLog })).rejects.toBe(failure);
+    expect(onLog).toHaveBeenCalledWith("error", "Web page load failed", expect.objectContaining({ error: failure }));
   });
 
   it("caches successful catalogs per key until they expire", async () => {
