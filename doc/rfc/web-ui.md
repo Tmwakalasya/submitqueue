@@ -72,7 +72,7 @@ Summary is the default request view, and `?view=history` makes History shareable
 
 ## Observability and identity
 
-Logging, metrics, and tracing are injected the way the Go services take zap and tally. The module accepts a pino logger, an OpenTelemetry meter, and an OpenTelemetry tracer, and default to a silent logger and the OpenTelemetry API's no-op providers. Every gateway read is timed and traced, and a failure is logged once under pino's `err` key with the request ID. The module times page loads too. The reference host logs with pino and exposes Prometheus metrics, from startup, only when a port is configured. It registers no tracer provider, so its spans are no-ops; a host that registers OpenTelemetry tracing can also add a gateway interceptor that propagates trace context. A host with another metrics client adapts it to the meter interface; if such adapters prove large, a smaller tally-shaped interface may replace it.
+Metrics and tracing use injected OpenTelemetry meters and tracers, defaulting to the API's no-op providers. Logging uses a synchronous `onLog` callback passed with each page request: severity, message, and structured metadata, including the request ID and the original error under `error`. The host binds the callback to its request-scoped logger; the libraries have no logging-library dependency. Omitting the callback is silent, and callback exceptions cannot change page outcomes. Every gateway read and page load is timed and traced. The reference hosts write Pino JSON logs, serializing errors under `err`, and SubmitQueue exposes Prometheus metrics only when a port is configured. The reference host registers no tracer provider, so its spans are no-ops; a host that registers OpenTelemetry tracing can also add a gateway interceptor that propagates trace context.
 
 Identity has no shared library to depend on, so the host authenticates and passes an opaque principal. The module never sees credentials.
 
@@ -94,7 +94,7 @@ The workspace lives under `web/` and repeats the Go root layout; the UI is a gat
 
 - Unit tests cover route round-trips, readable paths, timestamp conversion, stable list bounds, cursor scoping and tampering, error classification and host classifiers, catalog caching, request-scoped logging, gateway and page metrics, mount paths and authorization, client navigation, and polling (transition-aware single flight, progressive backoff, hidden and offline pause, history-aware terminal stop).
 - Every protected host layout and route repeats the authentication check rather than relying only on the Next.js proxy.
-- `//web/test/e2e:web_test` runs the Bazel-built Go services, the Bazel-built web image, and a digest-pinned MySQL image with pulls and Dockerfile builds disabled. It covers the Basic-auth challenge, explicit h2c, newest-first lists, client-side navigation, a slash-containing request ID, lifecycle and build history, paginated change history, and axe checks.
+- `//web/test/e2e/submitqueue:web_test` runs the Bazel-built Go services, the Bazel-built web image, and a digest-pinned MySQL image with pulls and Dockerfile builds disabled. It covers the Basic-auth challenge, explicit h2c, newest-first lists, client-side navigation, a slash-containing request ID, lifecycle and build history, paginated change history, and axe checks.
 - Built package tarballs are inspected for contents and forbidden imports, typechecked by a consumer written only against public entry points, rendered by a plain Node consumer through `handle`, and server-rendered and hydrated under React 18.
 
 ## Deferred

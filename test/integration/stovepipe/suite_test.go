@@ -39,6 +39,7 @@ import (
 	pb "github.com/uber/submitqueue/api/stovepipe/protopb"
 	"github.com/uber/submitqueue/test/testutil"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type StovepipeIntegrationSuite struct {
@@ -186,13 +187,32 @@ func (s *StovepipeIntegrationSuite) TestRequestHistoryAPIs() {
 	require.Zero(t, requestRows)
 
 	byID, err := s.client.GetRequestHistoryByID(s.ctx, &pb.GetRequestHistoryByIDRequest{Queue: queue, RequestId: requestID})
-	require.NoError(t, err)
-	assertHistoryEvents(t, byID.Events)
+	require.Error(t, err)
+	assert.Nil(t, byID)
 
 	byURI, err := s.client.GetRequestHistoryByURI(s.ctx, &pb.GetRequestHistoryByURIRequest{Queue: queue, Uri: uri})
+	require.Error(t, err)
+	assert.Nil(t, byURI)
+
+	const baseURI = "git://history-api/main/base"
+	_, err = s.db.Exec(`INSERT INTO request_summary
+		(queue, request_id, uri, base_uri, state, request_version, state_timestamp_ms, version, accepted_at_ms, outcome_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		queue, requestID, uri, baseURI, "succeeded", 3, 2000, 1, 1000, "build_succeeded")
+	require.NoError(t, err)
+	byID, err = s.client.GetRequestHistoryByID(s.ctx, &pb.GetRequestHistoryByIDRequest{Queue: queue, RequestId: requestID})
+	require.NoError(t, err)
+	byURI, err = s.client.GetRequestHistoryByURI(s.ctx, &pb.GetRequestHistoryByURIRequest{Queue: queue, Uri: uri})
 	require.NoError(t, err)
 	require.Len(t, byURI.Histories, 1)
+	wantSummary := &pb.RequestSummary{
+		RequestId: requestID, Queue: queue, ChangeUri: uri, BaseUri: baseURI, RequestState: "succeeded",
+		StateUpdatedAtMs: 2000, AcceptedAtMs: 1000, OutcomeReason: "build_succeeded",
+	}
+	assert.True(t, proto.Equal(wantSummary, byID.RequestSummary))
+	assert.True(t, proto.Equal(wantSummary, byURI.Histories[0].RequestSummary))
 	assert.Equal(t, requestID, byURI.Histories[0].RequestId)
+	assertHistoryEvents(t, byID.Events)
 	assertHistoryEvents(t, byURI.Histories[0].Events)
 }
 
@@ -220,6 +240,11 @@ func (s *StovepipeIntegrationSuite) TestRequestHistoryAbsence() {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		queue, scopedID, "occurrence/001", 1000, "accepted", "", 1, "", `{}`,
 	)
+	require.NoError(t, err)
+
+	_, err = s.db.Exec(`INSERT INTO request_summary
+		(queue, request_id, uri, base_uri, state, request_version, state_timestamp_ms, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, queue, missingID, missingURI, "", "accepted", 1, 1000, 1)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -267,6 +292,60 @@ func (s *StovepipeIntegrationSuite) TestRequestHistoryAbsence() {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Error(t, tt.call())
 		})
+	}
+}
+
+func (s *StovepipeIntegrationSuite) TestProjectStatusAPI() {
+	t := s.T()
+	const (
+		queue = "project-status-api/main"
+		id    = "7"
+		uri   = "git://project-status-api/main/commit"
+	)
+	_, err := s.db.Exec(`INSERT INTO request_summary
+		(queue, request_id, uri, base_uri, state, request_version, state_timestamp_ms, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, queue, id, uri, "git://project-status-api/main/base", "succeeded", 3, 1000, 1)
+	require.NoError(t, err)
+	_, err = s.db.Exec("INSERT INTO request_uri (queue, uri, request_id, version) VALUES (?, ?, ?, ?)", queue, uri, id, 1)
+	require.NoError(t, err)
+	_, err = s.db.Exec(`INSERT INTO validation_fact (queue, uri, project, degree, request_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+		queue, uri, "", 0.0, id, 2000, queue, uri, "project-a", 0.5, id, 3000)
+	require.NoError(t, err)
+
+	byURI, err := s.client.GetProjectStatusByURI(s.ctx, &pb.GetProjectStatusByURIRequest{
+		Queue: queue, ChangeUri: uri, Projects: []string{"project-a", "missing"}, PageSize: 1,
+	})
+	require.NoError(t, err)
+	byID, err := s.client.GetProjectStatusByID(s.ctx, &pb.GetProjectStatusByIDRequest{
+		Queue: queue, RequestId: id, Projects: []string{"project-a", "missing"}, PageSize: 1,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, byURI.GetRequestId(), byID.GetRequestId())
+	assert.Equal(t, queue, byID.GetQueue())
+	assert.Equal(t, uri, byID.GetChangeUri())
+	assert.Equal(t, byURI.GetBaseUri(), byID.GetBaseUri())
+	assert.Equal(t, "succeeded", byID.GetRequestState())
+	assert.Equal(t, int64(3000), byID.GetUpdatedAtMs())
+	assert.IsType(t, &pb.GetProjectStatusByIDResponse_RepositoryBreakageDegree{}, byID.GetRepositoryResult())
+	assert.Zero(t, byID.GetRepositoryBreakageDegree())
+	require.Len(t, byID.Projects, 1)
+	assert.Equal(t, "project-a", byID.Projects[0].GetProject())
+	assert.Equal(t, 0.5, byID.Projects[0].GetBreakageDegree())
+	assert.Equal(t, byURI.GetNextPageToken(), byID.GetNextPageToken())
+	require.NotEmpty(t, byID.GetNextPageToken())
+	lastPage, err := s.client.GetProjectStatusByID(s.ctx, &pb.GetProjectStatusByIDRequest{
+		Queue: queue, RequestId: id, Projects: []string{"project-a", "missing"}, PageSize: 1, PageToken: byURI.GetNextPageToken(),
+	})
+	require.NoError(t, err)
+	assert.Empty(t, lastPage.Projects)
+	assert.Empty(t, lastPage.NextPageToken)
+
+	for _, selector := range []struct{ queue, id string }{{queue, "999"}, {"project-status-api/other", id}} {
+		_, err := s.client.GetProjectStatusByID(s.ctx, &pb.GetProjectStatusByIDRequest{
+			Queue: selector.queue, RequestId: selector.id, Projects: []string{"project-a"},
+		})
+		require.Error(t, err)
 	}
 }
 

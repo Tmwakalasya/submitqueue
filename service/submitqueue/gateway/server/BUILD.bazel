@@ -7,7 +7,7 @@ exports_files(
 
 exports_files(
     ["queues.yaml"],
-    visibility = ["//web/test/e2e:__pkg__"],
+    visibility = ["//web/test/e2e/submitqueue:__pkg__"],
 )
 
 go_library(
@@ -29,6 +29,7 @@ go_library(
         "//platform/extension/messagequeue:go_default_library",
         "//platform/extension/messagequeue/mysql:go_default_library",
         "//service/messagequeue:go_default_library",
+        "//service/submitqueue/core:go_default_library",
         "//service/submitqueue/gateway/server/mapper:go_default_library",
         "//submitqueue/core/topickey:go_default_library",
         "//submitqueue/extension/queueconfig/yaml:go_default_library",
@@ -60,7 +61,7 @@ go_cross_binary(
     name = "gateway_linux",
     platform = "@rules_go//go/toolchain:linux_amd64",
     target = ":gateway",
-    visibility = ["//web/test/e2e:__pkg__"],
+    visibility = ["//web/test/e2e/submitqueue:__pkg__"],
 )
 
 # Everything a Docker-based test needs to build the gateway image from a staged
@@ -76,7 +77,7 @@ filegroup(
     ],
     visibility = [
         "//test:__subpackages__",
-        "//web/test/e2e:__pkg__",
+        "//web/test/e2e/submitqueue:__pkg__",
     ],
 )
 
@@ -86,6 +87,7 @@ go_test(
     embed = [":gateway_lib"],  # keep
     deps = [
         "//api/submitqueue/gateway/protopb:go_default_library",
+        "//platform/errs:go_default_library",
         "//submitqueue/entity:go_default_library",
         "//submitqueue/extension/queueconfig/mock:go_default_library",
         "//submitqueue/gateway/controller:go_default_library",
