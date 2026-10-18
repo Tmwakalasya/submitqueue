@@ -87,6 +87,10 @@ type Storage interface {
 	// GetQueueStore returns the QueueStore instance.
 	GetQueueStore() QueueStore
 
+	GetQueueSummaryStore() QueueSummaryStore
+
+	GetQueueLogStore() QueueLogStore
+
 	// GetBuildStore returns the BuildStore instance.
 	GetBuildStore() BuildStore
 
