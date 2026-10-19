@@ -14,6 +14,9 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"github.com/uber/submitqueue/platform/base/change"
+	"github.com/uber/submitqueue/platform/errs"
+	httperrs "github.com/uber/submitqueue/platform/errs/http"
+	phttp "github.com/uber/submitqueue/platform/http"
 	"github.com/uber/submitqueue/submitqueue/entity"
 	"github.com/uber/submitqueue/submitqueue/extension/changeprovider"
 )
@@ -65,7 +68,7 @@ func TestProvider_Get(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
 			uris:    []string{"phab://phab.example.com/D200/100"},
-			wantErr: "Conduit API returned status 500",
+			wantErr: "unexpected status 500",
 		},
 	}
 
@@ -138,6 +141,43 @@ func TestProvider_Get_ConnectionError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch diffs")
+}
+
+func TestProvider_Get_HTTPStatusError(t *testing.T) {
+	processor := errs.NewClassifierProcessor(httperrs.Classifier)
+	for _, tt := range []struct {
+		name      string
+		status    int
+		retryable bool
+	}{
+		{name: "service unavailable", status: http.StatusServiceUnavailable, retryable: true},
+		{name: "rate limited", status: http.StatusTooManyRequests, retryable: true},
+		{name: "bad request", status: http.StatusBadRequest},
+		{name: "unauthorized", status: http.StatusUnauthorized},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const body = "upstream failure"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(server.Close)
+
+			client := &http.Client{Transport: &testTransport{baseURL: server.URL}}
+			p := newTestProvider(t, client)
+			_, err := p.Get(t.Context(), entity.Request{Change: change.Change{
+				URIs: []string{"phab://phab.example.com/D200/100"},
+			}})
+			var statusErr *phttp.StatusError
+			require.ErrorAs(t, err, &statusErr)
+			assert.Equal(t, tt.status, statusErr.StatusCode)
+			assert.Equal(t, body, statusErr.Body)
+
+			classified := processor.Process(err)
+			assert.Equal(t, tt.retryable, errs.IsRetryable(classified))
+			assert.True(t, errs.IsDependencyError(classified))
+		})
+	}
 }
 
 func TestProvider_Get_FileDetails(t *testing.T) {

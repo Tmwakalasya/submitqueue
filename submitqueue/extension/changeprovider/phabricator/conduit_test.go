@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,7 @@ func TestParseConduitResponse(t *testing.T) {
 			name:    "HTTP error",
 			resp:    newPlainHTTPResponse("server error", http.StatusInternalServerError),
 			diffIDs: []int{100},
-			wantErr: "Conduit API returned status 500",
+			wantErr: "unexpected status 500",
 		},
 		{
 			name: "HTTP error with unreadable body",
@@ -147,6 +148,18 @@ func TestParseConduitResponse(t *testing.T) {
 			assert.Len(t, results, len(tc.diffIDs))
 		})
 	}
+}
+
+func TestParseConduitResponse_BodyReadError(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF)),
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	_, err := parseConduitResponse(resp, []int{100})
+
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
 
 // newConduitHTTPResponse builds an http.Response with a successful Conduit envelope.

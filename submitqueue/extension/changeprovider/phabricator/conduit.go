@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	phttp "github.com/uber/submitqueue/platform/http"
 )
 
 // conduitResponse stores a response from the Conduit API. Every Conduit endpoint wraps its
@@ -67,7 +69,7 @@ func parseConduitResponse(resp *http.Response, diffIDs []int) (map[int]*diffResu
 		if err != nil {
 			return nil, fmt.Errorf("Conduit API returned status %d and failed to read body: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("Conduit API returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("Conduit API request failed: %w", phttp.NewStatusError(resp.StatusCode, body))
 	}
 
 	var phabResponse conduitResponse

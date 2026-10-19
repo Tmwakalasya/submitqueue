@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//platform/base/change/phabricator:go_default_library",
+        "//platform/http:go_default_library",
         "//platform/metrics:go_default_library",
         "//submitqueue/entity:go_default_library",
         "//submitqueue/extension/changeprovider:go_default_library",
@@ -30,6 +31,9 @@ go_test(
     deps = [
         "//platform/base/change:go_default_library",
         "//platform/base/change/phabricator:go_default_library",
+        "//platform/errs:go_default_library",
+        "//platform/errs/http:go_default_library",
+        "//platform/http:go_default_library",
         "//submitqueue/entity:go_default_library",
         "//submitqueue/extension/changeprovider:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
